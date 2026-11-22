@@ -2,16 +2,43 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DiagramViewer } from './components/DiagramViewer';
 import { darkAcademiaLibraryScenes } from './data/libraryScenes';
 import { quizDatasets } from './data/quizDatasets';
-import type { QuizDataset, UserAnswer } from './types/quiz';
+import type { QuizDataset, QuizQuestion, UserAnswer } from './types/quiz';
 import {
   isQuestionCorrect,
   isSingleBlankCorrect,
 } from './utils/answerUtils';
 import { downloadStandaloneBackupHtml } from './utils/exportStandaloneHtml';
+import {
+  exportReviewToBase64Url,
+  getQuestionKey,
+  importReviewFromBase64Url,
+  mergeReviewQuestions,
+} from './utils/transferUtils';
 
-type ViewMode = 'home' | 'quiz' | 'result';
+type ViewMode = 'home' | 'quiz' | 'result' | 'transfer';
 
 const SCROLL_NUMBERS = ['壱', '弐', '参', '肆', '伍', '陸'];
+const REVIEW_STORAGE_KEY = 'daia_3dcad_review_questions_v1';
+const REVIEW_DATASET_ID = 'review_wrong_questions';
+
+function loadStoredReviewQuestions(): QuizQuestion[] {
+  try {
+    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredReviewQuestions(list: QuizQuestion[]): void {
+  try {
+    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
@@ -19,6 +46,9 @@ export default function App() {
   const [currentDataset, setCurrentDataset] = useState<QuizDataset | null>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
+  const [reviewQuestions, setReviewQuestions] = useState<QuizQuestion[]>(() =>
+    loadStoredReviewQuestions()
+  );
 
   const [fillDraft, setFillDraft] = useState<string>('');
   const [multiFillDrafts, setMultiFillDrafts] = useState<string[]>([]);
@@ -33,6 +63,8 @@ export default function App() {
   const [totalDraft, setTotalDraft] = useState<string>('1');
   const [showSecretInput, setShowSecretInput] = useState<boolean>(false);
   const [secretDraft, setSecretDraft] = useState<string>('');
+  const [transferImportDraft, setTransferImportDraft] = useState<string>('');
+  const [confirmResetData, setConfirmResetData] = useState<boolean>(false);
 
   const bgVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastBgIndexRef = useRef<number>(-1);
@@ -70,6 +102,35 @@ export default function App() {
     if (!video) return;
     video.play().catch(() => {});
   }, [sceneIndex]);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const saveToken = params.get('save');
+      if (!saveToken) return;
+      const imported = importReviewFromBase64Url(saveToken, quizDatasets);
+      setReviewQuestions((prev) => {
+        const merged = mergeReviewQuestions(prev, imported);
+        saveStoredReviewQuestions(merged);
+        return merged;
+      });
+      params.delete('save');
+      const nextSearch = params.toString();
+      const nextUrl =
+        window.location.pathname +
+        (nextSearch ? `?${nextSearch}` : '') +
+        window.location.hash;
+      window.history.replaceState(null, '', nextUrl);
+      setToastMsg(
+        `✦ URLから引継ぎデータ（${imported.length}問）を読み込みました。`
+      );
+      toastTimerRef.current = window.setTimeout(() => {
+        setToastMsg(null);
+      }, 3500);
+    } catch {
+      // ignore malformed URL save parameter
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -234,10 +295,7 @@ export default function App() {
     scrollToTop();
   };
 
-  const startQuiz = (datasetId: string) => {
-    const dataset = quizDatasets.find((d) => d.id === datasetId);
-    if (!dataset) return;
-
+  const startQuizWithDataset = (dataset: QuizDataset) => {
     setCurrentDataset(dataset);
     setCurrentIndex(0);
     setTestQuestionLimit(null);
@@ -251,13 +309,55 @@ export default function App() {
     scrollToTop();
   };
 
+  const startQuiz = (datasetId: string) => {
+    if (datasetId === REVIEW_DATASET_ID) {
+      if (reviewQuestions.length === 0) {
+        showMessage('まだ間違えた問題はありません。');
+        return;
+      }
+      startQuizWithDataset({
+        id: REVIEW_DATASET_ID,
+        title: '復習問題集',
+        description:
+          'これまで間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。',
+        questions: reviewQuestions,
+      });
+      return;
+    }
+
+    const dataset = quizDatasets.find((d) => d.id === datasetId);
+    if (!dataset) return;
+    startQuizWithDataset(dataset);
+  };
+
   const submitAnswer = (answer: string | string[]) => {
-    if (isAnswered) return;
+    if (isAnswered || !currentQuestion) return;
     setUserAnswers((prev) => {
       const next = [...prev];
       next[currentIndex] = answer;
       return next;
     });
+
+    const correct = isQuestionCorrect(answer, currentQuestion);
+    const key = getQuestionKey(currentQuestion);
+    if (!correct) {
+      setReviewQuestions((prev) => {
+        if (prev.some((item) => getQuestionKey(item) === key)) {
+          return prev;
+        }
+        const updated = [...prev, currentQuestion];
+        saveStoredReviewQuestions(updated);
+        return updated;
+      });
+    } else if (currentDataset?.id === REVIEW_DATASET_ID) {
+      setReviewQuestions((prev) => {
+        const updated = prev.filter((item) => getQuestionKey(item) !== key);
+        if (updated.length !== prev.length) {
+          saveStoredReviewQuestions(updated);
+        }
+        return updated;
+      });
+    }
   };
 
   const handleFillSubmit = () => {
@@ -402,9 +502,12 @@ export default function App() {
   };
 
   const retryQuiz = () => {
-    if (currentDataset) {
-      startQuiz(currentDataset.id);
+    if (!currentDataset) return;
+    if (currentDataset.id === REVIEW_DATASET_ID) {
+      startQuiz(REVIEW_DATASET_ID);
+      return;
     }
+    startQuizWithDataset(currentDataset);
   };
 
   const groupedDatasets = quizDatasets.filter(
@@ -432,18 +535,33 @@ export default function App() {
   const activeQuestions = currentDataset
     ? currentDataset.questions.slice(0, effectiveTotal)
     : [];
+  const incorrectQuestions =
+    viewMode === 'result' && currentDataset
+      ? activeQuestions.filter(
+          (q, idx) => !isQuestionCorrect(userAnswers[idx], q)
+        )
+      : [];
   const correctCount =
     viewMode === 'result' && currentDataset
-      ? activeQuestions.reduce(
-          (count, q, idx) =>
-            isQuestionCorrect(userAnswers[idx], q) ? count + 1 : count,
-          0
-        )
+      ? activeQuestions.length - incorrectQuestions.length
       : 0;
   const totalCount = activeQuestions.length;
-  const incorrectCount = totalCount - correctCount;
+  const incorrectCount = incorrectQuestions.length;
   const percentage =
     totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+
+  const retryIncorrectOnly = () => {
+    if (!currentDataset || incorrectQuestions.length === 0) return;
+    const retryDataset: QuizDataset = {
+      id: `retry_incorrect_${Date.now()}`,
+      title: currentDataset.title.endsWith('（間違えた問題）')
+        ? currentDataset.title
+        : `${currentDataset.title}（間違えた問題）`,
+      description: `${currentDataset.title} で間違えた ${incorrectQuestions.length} 問の復習用セットです。`,
+      questions: incorrectQuestions,
+    };
+    startQuizWithDataset(retryDataset);
+  };
 
   const currentQuestionCorrect =
     isAnswered && currentQuestion
@@ -631,6 +749,78 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6">
+                {/* データ引継ぎカード（1番目） */}
+                <div
+                  onClick={() => {
+                    setTransferImportDraft('');
+                    setConfirmResetData(false);
+                    setViewMode('transfer');
+                    changeRandomLibraryBackground();
+                    scrollToTop();
+                  }}
+                  className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                        御試みの書 壱
+                      </span>
+                      <span className="text-xs text-[#d4af37] font-bold tracking-wider">
+                        Base64URL 形式対応
+                      </span>
+                    </div>
+                    <h3 className="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                      データ引継ぎ
+                    </h3>
+                    <p className="text-sm text-[#a69a8c] leading-relaxed">
+                      復習問題などの学習記録をBase64URLコードやURLで書き出し、別の端末やブラウザへ引き継ぎます。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0 cursor-pointer"
+                  >
+                    <span>引継ぎを開く ▶</span>
+                  </button>
+                </div>
+
+                {/* 復習問題集カード（2番目） */}
+                <div
+                  onClick={() => startQuiz(REVIEW_DATASET_ID)}
+                  className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                        御試みの書 弐
+                      </span>
+                      <span className="text-xs text-[#d4af37] font-bold tracking-wider">
+                        全 {reviewQuestions.length} 問収録
+                      </span>
+                    </div>
+                    <h3 className="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                      復習問題集
+                    </h3>
+                    <p className="text-sm text-[#a69a8c] leading-relaxed">
+                      {reviewQuestions.length > 0
+                        ? 'これまでの試験や図問題で間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。'
+                        : 'これまで間違えた問題が自動的にここへ収録されます（現在は間違いがありません）。'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0 ${
+                      reviewQuestions.length === 0
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'cursor-pointer'
+                    }`}
+                  >
+                    <span>
+                      {reviewQuestions.length > 0 ? '復習へ挑む ▶' : '問題なし'}
+                    </span>
+                  </button>
+                </div>
+
                 {/* 演習問題集フォルダカード */}
                 <div
                   onClick={() => {
@@ -643,7 +833,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2.5">
                       <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
-                        御試みの書 壱
+                        御試みの書 参
                       </span>
                       <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                         演習問題数：全 {totalGroupedQuestions} 問収録（
@@ -668,7 +858,7 @@ export default function App() {
                 {/* その他の独立ファイル */}
                 {standaloneDatasets.map((dataset, idx) => {
                   const scrollLabel =
-                    SCROLL_NUMBERS[idx + 1] ?? String(idx + 2);
+                    SCROLL_NUMBERS[idx + 3] ?? String(idx + 4);
                   return (
                     <div
                       key={dataset.id}
@@ -1142,7 +1332,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+              <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 pt-4">
                 <button
                   type="button"
                   onClick={() => goToHome(null)}
@@ -1150,6 +1340,18 @@ export default function App() {
                 >
                   <span>🗝️ ホームに戻る</span>
                 </button>
+                {incorrectQuestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={retryIncorrectOnly}
+                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-rose-500/70 bg-[#2d141d] hover:bg-[#421a28] text-[#f3e5ab] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>
+                      🔄 間違えた問題だけをやり直す（{incorrectQuestions.length}
+                      問）
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={retryQuiz}
@@ -1158,6 +1360,211 @@ export default function App() {
                   <span>🕯️ もう一度挑戦する</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 4: DATA TRANSFER SCREEN */}
+        {viewMode === 'transfer' && (
+          <div className="space-y-6 animate-fadeIn">
+            <div className="antique-card rounded-2xl p-6 sm:p-8 space-y-8">
+              <div className="text-center space-y-2">
+                <span className="inline-block text-xs uppercase tracking-[0.25em] text-[#d4af37] font-bold px-4 py-1 bg-[#261829] rounded-full border border-[#c5a059]/40">
+                  ✦ 記録の継承 ✦
+                </span>
+                <h2 className="classic-title text-2xl sm:text-3xl font-bold text-[#f3e5ab]">
+                  データ引継ぎ（Base64URL）
+                </h2>
+                <p className="text-xs sm:text-sm text-[#a69a8c]">
+                  現在の復習問題（全 {reviewQuestions.length}{' '}
+                  問）をコードやURLとして別の端末・ブラウザへ引き継げます。
+                </p>
+              </div>
+
+              {/* 書き出し（エクスポート） */}
+              <div className="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm sm:text-base font-bold text-[#d4af37]">
+                    📤 データを書き出す（引継ぎコード）
+                  </h3>
+                  <span className="text-xs text-[#a69a8c]">
+                    収録数：{reviewQuestions.length} 問
+                  </span>
+                </div>
+                <textarea
+                  readOnly
+                  rows={3}
+                  value={exportReviewToBase64Url(reviewQuestions, quizDatasets)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f3e5ab] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
+                />
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const code = exportReviewToBase64Url(
+                        reviewQuestions,
+                        quizDatasets
+                      );
+                      try {
+                        await navigator.clipboard.writeText(code);
+                      } catch {
+                        const tmp = document.createElement('textarea');
+                        tmp.value = code;
+                        document.body.appendChild(tmp);
+                        tmp.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tmp);
+                      }
+                      showMessage('✦ Base64URLコードをコピーしました。');
+                    }}
+                    className="antique-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold cursor-pointer"
+                  >
+                    📋 コードをコピー
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const code = exportReviewToBase64Url(
+                        reviewQuestions,
+                        quizDatasets
+                      );
+                      const base = `${window.location.origin}${window.location.pathname}`;
+                      const shareUrl = `${base}?save=${code}`;
+                      try {
+                        await navigator.clipboard.writeText(shareUrl);
+                      } catch {
+                        const tmp = document.createElement('textarea');
+                        tmp.value = shareUrl;
+                        document.body.appendChild(tmp);
+                        tmp.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tmp);
+                      }
+                      showMessage('✦ 引継ぎURLをコピーしました。');
+                    }}
+                    className="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer"
+                  >
+                    🔗 引継ぎURLをコピー
+                  </button>
+                </div>
+              </div>
+
+              {/* 読み込み（インポート） */}
+              <div className="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
+                <h3 className="text-sm sm:text-base font-bold text-[#d4af37]">
+                  📥 データを読み込む（コード / 引継ぎURL）
+                </h3>
+                <textarea
+                  rows={3}
+                  value={transferImportDraft}
+                  onChange={(e) => setTransferImportDraft(e.target.value)}
+                  placeholder="Base64URLコード、または引継ぎURL（?save=...）をここに貼り付けてください..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f5efe6] placeholder-[#7d7267] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
+                />
+                <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const imported = importReviewFromBase64Url(
+                          transferImportDraft,
+                          quizDatasets
+                        );
+                        setReviewQuestions(imported);
+                        saveStoredReviewQuestions(imported);
+                        setTransferImportDraft('');
+                        showMessage(
+                          `✦ ${imported.length} 問の復習データを引き継ぎました（上書き）。`
+                        );
+                      } catch {
+                        showMessage(
+                          '引継ぎコードの形式が正しくありません。'
+                        );
+                      }
+                    }}
+                    className="antique-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold cursor-pointer"
+                  >
+                    📥 上書きして読み込む
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const imported = importReviewFromBase64Url(
+                          transferImportDraft,
+                          quizDatasets
+                        );
+                        const merged = mergeReviewQuestions(
+                          reviewQuestions,
+                          imported
+                        );
+                        const addedCount =
+                          merged.length - reviewQuestions.length;
+                        setReviewQuestions(merged);
+                        saveStoredReviewQuestions(merged);
+                        setTransferImportDraft('');
+                        showMessage(
+                          `✦ 復習データを統合しました（新規追加 ${addedCount} 問・合計 ${merged.length} 問）。`
+                        );
+                      } catch {
+                        showMessage(
+                          '引継ぎコードの形式が正しくありません。'
+                        );
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer"
+                  >
+                    ➕ 現在の記録と統合する
+                  </button>
+                </div>
+              </div>
+
+              {!confirmResetData ? (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmResetData(true)}
+                    className="px-6 py-3 rounded-xl border border-rose-500/60 bg-[#261117] hover:bg-[#3a1822] text-rose-200 font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    🗑️ データを初期化
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-[#261117]/90 border border-rose-500/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+                  <p className="text-xs sm:text-sm text-rose-200 font-semibold">
+                    保存されている復習問題データ（全 {reviewQuestions.length}{' '}
+                    問）をすべて消去して初期化しますか？
+                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmResetData(false)}
+                      className="px-4 py-2 rounded-lg border border-[#c5a059]/40 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] text-xs font-bold transition cursor-pointer"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReviewQuestions([]);
+                        saveStoredReviewQuestions([]);
+                        try {
+                          window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+                        } catch {
+                          // ignore
+                        }
+                        setTransferImportDraft('');
+                        setConfirmResetData(false);
+                        showMessage('✦ 学習データを初期化しました。');
+                      }}
+                      className="px-4 py-2 rounded-lg border border-rose-400 bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      初期化する
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

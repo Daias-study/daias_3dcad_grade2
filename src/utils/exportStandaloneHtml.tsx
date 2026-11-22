@@ -242,13 +242,96 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
           </div>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+        <div class="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 pt-4">
           <button onclick="goToHome()" class="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
             <span>🗝️ ホームに戻る</span>
+          </button>
+          <button id="retry-incorrect-btn" onclick="retryIncorrectOnly()" class="hidden w-full sm:w-auto px-6 py-3.5 rounded-xl border border-rose-500/70 bg-[#2d141d] hover:bg-[#421a28] text-[#f3e5ab] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
+            <span id="retry-incorrect-text">🔄 間違えた問題だけをやり直す</span>
           </button>
           <button onclick="retryQuiz()" class="w-full sm:w-auto antique-btn px-8 py-3.5 rounded-xl font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
             <span>🕯️ もう一度挑戦する</span>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 4: DATA TRANSFER SCREEN -->
+    <div id="view-transfer" class="hidden space-y-6 animate-fadeIn">
+      <div class="antique-card rounded-2xl p-6 sm:p-8 space-y-8">
+        <div class="text-center space-y-2">
+          <span class="inline-block text-xs uppercase tracking-[0.25em] text-[#d4af37] font-bold px-4 py-1 bg-[#261829] rounded-full border border-[#c5a059]/40">
+            ✦ 記録の継承 ✦
+          </span>
+          <h2 class="classic-title text-2xl sm:text-3xl font-bold text-[#f3e5ab]">
+            データ引継ぎ（Base64URL）
+          </h2>
+          <p id="transfer-subtitle" class="text-xs sm:text-sm text-[#a69a8c]">
+            現在の復習問題（全 0 問）をコードやURLとして別の端末・ブラウザへ引き継げます。
+          </p>
+        </div>
+
+        <div class="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm sm:text-base font-bold text-[#d4af37]">
+              📤 データを書き出す（引継ぎコード）
+            </h3>
+            <span id="transfer-count-label" class="text-xs text-[#a69a8c]">収録数：0 問</span>
+          </div>
+          <textarea
+            id="transfer-export-code"
+            readonly
+            rows="3"
+            onfocus="this.select()"
+            class="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f3e5ab] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
+          ></textarea>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <button type="button" onclick="copyTransferCode()" class="antique-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold cursor-pointer">
+              📋 コードをコピー
+            </button>
+            <button type="button" onclick="copyTransferUrl()" class="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer">
+              🔗 引継ぎURLをコピー
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
+          <h3 class="text-sm sm:text-base font-bold text-[#d4af37]">
+            📥 データを読み込む（コード / 引継ぎURL）
+          </h3>
+          <textarea
+            id="transfer-import-input"
+            rows="3"
+            placeholder="Base64URLコード、または引継ぎURL（?save=...）をここに貼り付けてください..."
+            class="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f5efe6] placeholder-[#7d7267] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
+          ></textarea>
+          <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+            <button type="button" onclick="importTransferData(false)" class="antique-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold cursor-pointer">
+              📥 上書きして読み込む
+            </button>
+            <button type="button" onclick="importTransferData(true)" class="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer">
+              ➕ 現在の記録と統合する
+            </button>
+          </div>
+        </div>
+
+        <div id="transfer-reset-trigger" class="flex justify-center pt-2">
+          <button type="button" onclick="openResetConfirm()" class="px-6 py-3 rounded-xl border border-rose-500/60 bg-[#261117] hover:bg-[#3a1822] text-rose-200 font-bold text-sm shadow-lg transition cursor-pointer">
+            🗑️ データを初期化
+          </button>
+        </div>
+        <div id="transfer-reset-confirm" class="hidden bg-[#261117]/90 border border-rose-500/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+          <p id="transfer-reset-message" class="text-xs sm:text-sm text-rose-200 font-semibold">
+            保存されている復習問題データ（全 0 問）をすべて消去して初期化しますか？
+          </p>
+          <div class="flex items-center gap-3 shrink-0">
+            <button type="button" onclick="cancelResetConfirm()" class="px-4 py-2 rounded-lg border border-[#c5a059]/40 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] text-xs font-bold transition cursor-pointer">
+              キャンセル
+            </button>
+            <button type="button" onclick="confirmResetAllData()" class="px-4 py-2 rounded-lg border border-rose-400 bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold transition cursor-pointer">
+              初期化する
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -270,6 +353,266 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     let isAnswered = false;
     let toastTimeout = null;
     let currentFolder = null;
+    const REVIEW_STORAGE_KEY = 'daia_3dcad_review_questions_v1';
+    const REVIEW_DATASET_ID = 'review_wrong_questions';
+
+    function getQuestionKey(q) {
+      return (q.diagram || '') + '::' + (q.type || 'choice') + '::' + q.question;
+    }
+
+    function loadStoredReviewQuestions() {
+      try {
+        const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveStoredReviewQuestions(list) {
+      try {
+        window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(list));
+      } catch (e) {}
+    }
+
+    let reviewQuestions = loadStoredReviewQuestions();
+
+    function encodeBase64Url(text) {
+      const bytes = new TextEncoder().encode(text);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary)
+        .split('+').join('-')
+        .split('/').join('_')
+        .replace(/=+$/, '');
+    }
+
+    function decodeBase64Url(code) {
+      const normalized = code.trim().split('-').join('+').split('_').join('/');
+      if (!normalized || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+        throw new Error('Invalid Base64URL format');
+      }
+      const padLen = (4 - (normalized.length % 4)) % 4;
+      const padded = normalized + '='.repeat(padLen);
+      const binary = atob(padded);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new TextDecoder().decode(bytes);
+    }
+
+    function exportReviewToBase64Url(list, datasets) {
+      const indexLookup = new Map();
+      datasets.forEach((ds, dsIdx) => {
+        ds.questions.forEach((q, qIdx) => {
+          const key = getQuestionKey(q);
+          if (!indexLookup.has(key)) {
+            indexLookup.set(key, [dsIdx, qIdx]);
+          }
+        });
+      });
+
+      const refs = [];
+      const extras = [];
+      for (let i = 0; i < list.length; i++) {
+        const q = list[i];
+        const ref = indexLookup.get(getQuestionKey(q));
+        if (ref) refs.push(ref);
+        else extras.push(q);
+      }
+
+      const payload = extras.length > 0
+        ? { v: 1, r: refs, x: extras }
+        : { v: 1, r: refs };
+      return encodeBase64Url(JSON.stringify(payload));
+    }
+
+    function extractBase64UrlToken(input) {
+      const trimmed = String(input || '').trim();
+      if (!trimmed) return '';
+      if (trimmed.indexOf('save=') !== -1) {
+        try {
+          const url = new URL(trimmed);
+          const param = url.searchParams.get('save');
+          if (param) return param.trim();
+        } catch (e) {
+          const idx = trimmed.indexOf('save=');
+          if (idx !== -1) {
+            const after = trimmed.slice(idx + 5);
+            const end = after.search(/[&#\\s]/);
+            const rawToken = end === -1 ? after : after.slice(0, end);
+            if (rawToken) return decodeURIComponent(rawToken).trim();
+          }
+        }
+      }
+      return trimmed.replace(/\\s+/g, '');
+    }
+
+    function importReviewFromBase64Url(rawInput, datasets) {
+      const token = extractBase64UrlToken(rawInput);
+      if (!token) throw new Error('Empty input');
+      const parsed = JSON.parse(decodeBase64Url(token));
+      if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.r)) {
+        throw new Error('Invalid payload structure');
+      }
+      const result = [];
+      const seen = new Set();
+      for (let i = 0; i < parsed.r.length; i++) {
+        const entry = parsed.r[i];
+        if (!Array.isArray(entry) || entry.length !== 2) continue;
+        const ds = datasets[entry[0]];
+        const q = ds && ds.questions ? ds.questions[entry[1]] : null;
+        if (!q) continue;
+        const key = getQuestionKey(q);
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(q);
+        }
+      }
+      if (Array.isArray(parsed.x)) {
+        for (let i = 0; i < parsed.x.length; i++) {
+          const q = parsed.x[i];
+          if (!q || typeof q.question !== 'string') continue;
+          const key = getQuestionKey(q);
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push(q);
+          }
+        }
+      }
+      return result;
+    }
+
+    function mergeReviewQuestions(current, incoming) {
+      const merged = current.slice();
+      const seen = new Set(current.map(getQuestionKey));
+      for (let i = 0; i < incoming.length; i++) {
+        const q = incoming[i];
+        const key = getQuestionKey(q);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(q);
+        }
+      }
+      return merged;
+    }
+
+    function refreshTransferView() {
+      const subtitleEl = document.getElementById('transfer-subtitle');
+      const countEl = document.getElementById('transfer-count-label');
+      const codeEl = document.getElementById('transfer-export-code');
+      if (subtitleEl) {
+        subtitleEl.innerText = '現在の復習問題（全 ' + reviewQuestions.length + ' 問）をコードやURLとして別の端末・ブラウザへ引き継げます。';
+      }
+      if (countEl) {
+        countEl.innerText = '収録数：' + reviewQuestions.length + ' 問';
+      }
+      if (codeEl) {
+        codeEl.value = exportReviewToBase64Url(reviewQuestions, quizDatasets);
+      }
+    }
+
+    function openResetConfirm() {
+      const msgEl = document.getElementById('transfer-reset-message');
+      if (msgEl) {
+        msgEl.innerText = '保存されている復習問題データ（全 ' + reviewQuestions.length + ' 問）をすべて消去して初期化しますか？';
+      }
+      const triggerEl = document.getElementById('transfer-reset-trigger');
+      const confirmEl = document.getElementById('transfer-reset-confirm');
+      if (triggerEl) triggerEl.classList.add('hidden');
+      if (confirmEl) confirmEl.classList.remove('hidden');
+    }
+
+    function cancelResetConfirm() {
+      const triggerEl = document.getElementById('transfer-reset-trigger');
+      const confirmEl = document.getElementById('transfer-reset-confirm');
+      if (confirmEl) confirmEl.classList.add('hidden');
+      if (triggerEl) triggerEl.classList.remove('hidden');
+    }
+
+    function confirmResetAllData() {
+      reviewQuestions = [];
+      saveStoredReviewQuestions([]);
+      try {
+        window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+      } catch (e) {}
+      const importEl = document.getElementById('transfer-import-input');
+      if (importEl) importEl.value = '';
+      cancelResetConfirm();
+      refreshTransferView();
+      showMessage('✦ 学習データを初期化しました。');
+    }
+
+    function openTransferView() {
+      changeRandomLibraryBackground();
+      document.getElementById('view-home').classList.add('hidden');
+      document.getElementById('view-quiz').classList.add('hidden');
+      document.getElementById('view-result').classList.add('hidden');
+      document.getElementById('view-transfer').classList.remove('hidden');
+      document.getElementById('home-btn-header').classList.remove('hidden');
+      const importEl = document.getElementById('transfer-import-input');
+      if (importEl) importEl.value = '';
+      cancelResetConfirm();
+      refreshTransferView();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function copyTextToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const tmp = document.createElement('textarea');
+        tmp.value = text;
+        document.body.appendChild(tmp);
+        tmp.select();
+        document.execCommand('copy');
+        document.body.removeChild(tmp);
+      }
+    }
+
+    async function copyTransferCode() {
+      const code = exportReviewToBase64Url(reviewQuestions, quizDatasets);
+      await copyTextToClipboard(code);
+      showMessage('✦ Base64URLコードをコピーしました。');
+    }
+
+    async function copyTransferUrl() {
+      const code = exportReviewToBase64Url(reviewQuestions, quizDatasets);
+      const origin = window.location.origin && window.location.origin !== 'null' ? window.location.origin : '';
+      const shareUrl = origin + window.location.pathname + '?save=' + code;
+      await copyTextToClipboard(shareUrl);
+      showMessage('✦ 引継ぎURLをコピーしました。');
+    }
+
+    function importTransferData(mergeMode) {
+      const importEl = document.getElementById('transfer-import-input');
+      const raw = importEl ? importEl.value : '';
+      try {
+        const imported = importReviewFromBase64Url(raw, quizDatasets);
+        if (mergeMode) {
+          const merged = mergeReviewQuestions(reviewQuestions, imported);
+          const addedCount = merged.length - reviewQuestions.length;
+          reviewQuestions = merged;
+          saveStoredReviewQuestions(merged);
+          if (importEl) importEl.value = '';
+          refreshTransferView();
+          showMessage('✦ 復習データを統合しました（新規追加 ' + addedCount + ' 問・合計 ' + merged.length + ' 問）。');
+        } else {
+          reviewQuestions = imported;
+          saveStoredReviewQuestions(imported);
+          if (importEl) importEl.value = '';
+          refreshTransferView();
+          showMessage('✦ ' + imported.length + ' 問の復習データを引き継ぎました（上書き）。');
+        }
+      } catch (e) {
+        showMessage('引継ぎコードの形式が正しくありません。');
+      }
+    }
 
     function escapeHtml(str) {
       return String(str || '')
@@ -407,6 +750,23 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     window.onload = function() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const saveParam = params.get('save');
+        if (saveParam) {
+          const imported = importReviewFromBase64Url(saveParam, quizDatasets);
+          const merged = mergeReviewQuestions(reviewQuestions, imported);
+          reviewQuestions = merged;
+          saveStoredReviewQuestions(merged);
+          params.delete('save');
+          const nextQuery = params.toString();
+          const nextUrl = window.location.pathname + (nextQuery ? '?' + nextQuery : '') + window.location.hash;
+          window.history.replaceState({}, '', nextUrl);
+          showMessage('✦ URLから復習データを引き継ぎました（合計 ' + merged.length + ' 問）。');
+        }
+      } catch (e) {
+        showMessage('引継ぎURLの読み込みに失敗しました。');
+      }
       renderHomeView();
     };
 
@@ -416,6 +776,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       document.getElementById('view-home').classList.remove('hidden');
       document.getElementById('view-quiz').classList.add('hidden');
       document.getElementById('view-result').classList.add('hidden');
+      document.getElementById('view-transfer').classList.add('hidden');
       document.getElementById('home-btn-header').classList.add('hidden');
 
       const container = document.getElementById('file-list-container');
@@ -450,6 +811,41 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         return;
       }
 
+      const transferCard = document.createElement('div');
+      transferCard.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
+      transferCard.onclick = () => openTransferView();
+      transferCard.innerHTML =
+        '<div class="space-y-2">'
+        + '<div class="flex items-center space-x-2.5">'
+        + '<span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">御試みの書 壱</span>'
+        + '<span class="text-xs text-[#d4af37] font-bold tracking-wider">Base64URL 形式対応</span>'
+        + '</div>'
+        + '<h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">データ引継ぎ</h3>'
+        + '<p class="text-sm text-[#a69a8c] leading-relaxed">復習問題などの学習記録をBase64URLコードやURLで書き出し、別の端末やブラウザへ引き継ぎます。</p>'
+        + '</div>'
+        + '<button class="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0"><span>引継ぎを開く ▶</span></button>';
+      container.appendChild(transferCard);
+
+      const reviewCard = document.createElement('div');
+      reviewCard.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
+      reviewCard.onclick = () => startQuiz(REVIEW_DATASET_ID);
+      const hasReview = reviewQuestions.length > 0;
+      reviewCard.innerHTML =
+        '<div class="space-y-2">'
+        + '<div class="flex items-center space-x-2.5">'
+        + '<span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">御試みの書 弐</span>'
+        + '<span class="text-xs text-[#d4af37] font-bold tracking-wider">全 ' + reviewQuestions.length + ' 問収録</span>'
+        + '</div>'
+        + '<h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">復習問題集</h3>'
+        + '<p class="text-sm text-[#a69a8c] leading-relaxed">'
+        + (hasReview
+            ? 'これまでの試験や図問題で間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。'
+            : 'これまで間違えた問題が自動的にここへ収録されます（現在は間違いがありません）。')
+        + '</p>'
+        + '</div>'
+        + '<button class="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0' + (hasReview ? '' : ' opacity-50 cursor-not-allowed') + '"><span>' + (hasReview ? '復習へ挑む ▶' : '問題なし') + '</span></button>';
+      container.appendChild(reviewCard);
+
       const groupedDatasets = quizDatasets.filter(d => d.group === 'practice_set_1_2');
       const totalGroupedQuestions = groupedDatasets.reduce((sum, d) => sum + d.questions.length, 0);
 
@@ -462,7 +858,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       folderCard.innerHTML =
         '<div class="space-y-2">'
         + '<div class="flex items-center space-x-2.5">'
-        + '<span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">御試みの書 壱</span>'
+        + '<span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">御試みの書 参</span>'
         + '<span class="text-xs text-[#d4af37] font-bold tracking-wider">演習問題数：全 ' + totalGroupedQuestions + ' 問収録（' + groupedDatasets.length + '回分）</span>'
         + '</div>'
         + '<h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">演習問題集</h3>'
@@ -476,7 +872,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         const card = document.createElement('div');
         card.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
         card.onclick = () => startQuiz(dataset.id);
-        const scrollLabel = scrollNumbers[idx + 1] || (idx + 2);
+        const scrollLabel = scrollNumbers[idx + 3] || (idx + 4);
         card.innerHTML =
           '<div class="space-y-2">'
           + '<div class="flex items-center space-x-2.5">'
@@ -491,9 +887,8 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       });
     }
 
-    function startQuiz(datasetId) {
-      currentDataset = quizDatasets.find(d => d.id === datasetId);
-      if (!currentDataset) return;
+    function startQuizWithDataset(dataset) {
+      currentDataset = dataset;
       currentIndex = 0;
       testQuestionLimit = null;
       userAnswers = new Array(currentDataset.questions.length).fill(null);
@@ -501,12 +896,32 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       changeRandomLibraryBackground();
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-result').classList.add('hidden');
+      document.getElementById('view-transfer').classList.add('hidden');
       document.getElementById('view-quiz').classList.remove('hidden');
       document.getElementById('home-btn-header').classList.remove('hidden');
       document.getElementById('quiz-file-title').innerText = currentDataset.title;
       updateTestModeUI();
       loadQuestion();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function startQuiz(datasetId) {
+      if (datasetId === REVIEW_DATASET_ID) {
+        if (reviewQuestions.length === 0) {
+          showMessage('まだ間違えた問題はありません。');
+          return;
+        }
+        startQuizWithDataset({
+          id: REVIEW_DATASET_ID,
+          title: '復習問題集',
+          description: 'これまで間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。',
+          questions: reviewQuestions.slice()
+        });
+        return;
+      }
+      const found = quizDatasets.find(d => d.id === datasetId);
+      if (!found) return;
+      startQuizWithDataset(found);
     }
 
     function renderQuizProgress() {
@@ -801,6 +1216,21 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       if (isAnswered) return;
       userAnswers[currentIndex] = selectedOpt;
       isAnswered = true;
+      const q = currentDataset.questions[currentIndex];
+      const correct = isQuestionCorrect(selectedOpt, q);
+      const key = getQuestionKey(q);
+      if (!correct) {
+        if (!reviewQuestions.some(item => getQuestionKey(item) === key)) {
+          reviewQuestions.push(q);
+          saveStoredReviewQuestions(reviewQuestions);
+        }
+      } else if (currentDataset && currentDataset.id === REVIEW_DATASET_ID) {
+        const nextList = reviewQuestions.filter(item => getQuestionKey(item) !== key);
+        if (nextList.length !== reviewQuestions.length) {
+          reviewQuestions = nextList;
+          saveStoredReviewQuestions(reviewQuestions);
+        }
+      }
       loadQuestion();
     }
 
@@ -860,24 +1290,57 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     function showResult() {
       changeRandomLibraryBackground();
       document.getElementById('view-quiz').classList.add('hidden');
+      document.getElementById('view-transfer').classList.add('hidden');
       document.getElementById('view-result').classList.remove('hidden');
       let correctCount = 0;
-      let incorrectCount = 0;
+      const incorrectList = [];
       const total = getEffectiveTotal();
       currentDataset.questions.slice(0, total).forEach((q, idx) => {
         if (isQuestionCorrect(userAnswers[idx], q)) correctCount++;
-        else incorrectCount++;
+        else incorrectList.push(q);
       });
+      const incorrectCount = incorrectList.length;
       const percentage = Math.round((correctCount / total) * 100);
       document.getElementById('result-file-subtitle').innerText = '対象試験： ' + currentDataset.title;
       document.getElementById('stat-correct').innerText = correctCount + ' 回';
       document.getElementById('stat-incorrect').innerText = incorrectCount + ' 回';
       document.getElementById('stat-percentage').innerText = percentage + '%';
+      const retryIncorrectBtn = document.getElementById('retry-incorrect-btn');
+      const retryIncorrectText = document.getElementById('retry-incorrect-text');
+      if (retryIncorrectBtn && retryIncorrectText) {
+        if (incorrectCount > 0) {
+          retryIncorrectBtn.classList.remove('hidden');
+          retryIncorrectText.innerText = '🔄 間違えた問題だけをやり直す（' + incorrectCount + '問）';
+        } else {
+          retryIncorrectBtn.classList.add('hidden');
+        }
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    function retryIncorrectOnly() {
+      if (!currentDataset) return;
+      const total = getEffectiveTotal();
+      const incorrectList = currentDataset.questions.slice(0, total).filter((q, idx) => !isQuestionCorrect(userAnswers[idx], q));
+      if (incorrectList.length === 0) return;
+      const title = currentDataset.title.endsWith('（間違えた問題）')
+        ? currentDataset.title
+        : currentDataset.title + '（間違えた問題）';
+      startQuizWithDataset({
+        id: 'retry_incorrect_' + Date.now(),
+        title: title,
+        description: currentDataset.title + ' で間違えた ' + incorrectList.length + ' 問の復習用セットです。',
+        questions: incorrectList
+      });
+    }
+
     function retryQuiz() {
-      if (currentDataset) startQuiz(currentDataset.id);
+      if (!currentDataset) return;
+      if (currentDataset.id === REVIEW_DATASET_ID) {
+        startQuiz(REVIEW_DATASET_ID);
+        return;
+      }
+      startQuizWithDataset(currentDataset);
     }
 
     function goToHome() {
