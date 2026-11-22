@@ -53,6 +53,7 @@ export interface QuizDataset {
   id: string;
   group?: string;
   title: string;
+  countSuffix?: string;
   description: string;
   questions: QuizQuestion[];
 }

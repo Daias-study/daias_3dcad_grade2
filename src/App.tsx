@@ -25,13 +25,22 @@ export default function App() {
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [sceneIndex, setSceneIndex] = useState<number>(0);
-  const [showBackupPanel, setShowBackupPanel] = useState<boolean>(false);
+  const [isTestMode, setIsTestMode] = useState<boolean>(false);
+  const [testQuestionLimit, setTestQuestionLimit] = useState<number | null>(
+    null
+  );
+  const [jumpDraft, setJumpDraft] = useState<string>('1');
+  const [totalDraft, setTotalDraft] = useState<string>('1');
   const [showSecretInput, setShowSecretInput] = useState<boolean>(false);
   const [secretDraft, setSecretDraft] = useState<string>('');
 
   const bgVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastBgIndexRef = useRef<number>(-1);
   const toastTimerRef = useRef<number | null>(null);
+  const jumpTimerRef = useRef<number | null>(null);
+  const totalTimerRef = useRef<number | null>(null);
+  const editingJumpRef = useRef<boolean>(false);
+  const editingTotalRef = useRef<boolean>(false);
   const fillInputRef = useRef<HTMLInputElement | null>(null);
   const multiInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
@@ -67,6 +76,12 @@ export default function App() {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
+      if (jumpTimerRef.current !== null) {
+        window.clearTimeout(jumpTimerRef.current);
+      }
+      if (totalTimerRef.current !== null) {
+        window.clearTimeout(totalTimerRef.current);
+      }
     };
   }, []);
 
@@ -79,6 +94,23 @@ export default function App() {
       setToastMsg(null);
     }, 3000);
   }, []);
+
+  const exitTestMode = useCallback(() => {
+    if (jumpTimerRef.current !== null) {
+      window.clearTimeout(jumpTimerRef.current);
+    }
+    if (totalTimerRef.current !== null) {
+      window.clearTimeout(totalTimerRef.current);
+    }
+    editingJumpRef.current = false;
+    editingTotalRef.current = false;
+    setIsTestMode(false);
+    setTestQuestionLimit(null);
+    setShowSecretInput(false);
+    setSecretDraft('');
+    keyBufferRef.current = '';
+    showMessage('✦ テストモードを終了しました。');
+  }, [showMessage]);
 
   const currentQuestion =
     currentDataset?.questions[currentIndex] ?? null;
@@ -108,12 +140,25 @@ export default function App() {
     }
   }, [viewMode, currentIndex, currentQuestion, savedAnswer, isAnswered]);
 
-  useEffect(() => {
-    if (viewMode !== 'home') {
-      keyBufferRef.current = '';
-      return;
-    }
+  const maxQuestions = currentDataset?.questions.length ?? 0;
+  const effectiveTotal =
+    currentDataset && testQuestionLimit !== null
+      ? Math.max(1, Math.min(testQuestionLimit, maxQuestions))
+      : maxQuestions;
 
+  useEffect(() => {
+    if (!editingJumpRef.current) {
+      setJumpDraft(String(currentIndex + 1));
+    }
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (!editingTotalRef.current && currentDataset) {
+      setTotalDraft(String(effectiveTotal));
+    }
+  }, [effectiveTotal, currentDataset]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
@@ -141,9 +186,9 @@ export default function App() {
         keyBufferRef.current = '';
         setShowSecretInput(false);
         setSecretDraft('');
-        setShowBackupPanel((prev) => {
+        setIsTestMode((prev) => {
           if (!prev) {
-            showMessage('✦ バックアップ保存メニューを表示しました');
+            showMessage('✦ テストモードに切り替えました。');
           }
           return true;
         });
@@ -152,7 +197,19 @@ export default function App() {
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [viewMode, showMessage]);
+  }, [showMessage]);
+
+  useEffect(() => {
+    if (!isTestMode) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        exitTestMode();
+      }
+    };
+    document.addEventListener('keydown', handleEscape, true);
+    return () => document.removeEventListener('keydown', handleEscape, true);
+  }, [isTestMode, exitTestMode]);
 
   useEffect(() => {
     if (showSecretInput) {
@@ -170,7 +227,6 @@ export default function App() {
   const goToHome = (folderId: string | null = null) => {
     setCurrentFolder(folderId);
     setViewMode('home');
-    setShowBackupPanel(false);
     setShowSecretInput(false);
     setSecretDraft('');
     keyBufferRef.current = '';
@@ -184,6 +240,9 @@ export default function App() {
 
     setCurrentDataset(dataset);
     setCurrentIndex(0);
+    setTestQuestionLimit(null);
+    setJumpDraft('1');
+    setTotalDraft(String(dataset.questions.length));
     setUserAnswers(new Array(dataset.questions.length).fill(null));
     setFillDraft('');
     setMultiFillDrafts([]);
@@ -236,7 +295,7 @@ export default function App() {
       return;
     }
 
-    if (currentIndex < currentDataset.questions.length - 1) {
+    if (currentIndex < effectiveTotal - 1) {
       setCurrentIndex((prev) => prev + 1);
       changeRandomLibraryBackground();
       scrollToTop();
@@ -253,6 +312,93 @@ export default function App() {
       changeRandomLibraryBackground();
       scrollToTop();
     }
+  };
+
+  const applyJumpToNumber = (num: number) => {
+    if (!currentDataset) return;
+    const clamped = Math.max(1, Math.min(num, effectiveTotal));
+    if (clamped - 1 !== currentIndex) {
+      setCurrentIndex(clamped - 1);
+      changeRandomLibraryBackground();
+      scrollToTop();
+    }
+    setJumpDraft(String(clamped));
+  };
+
+  const handleJumpDraftChange = (val: string) => {
+    setJumpDraft(val);
+    if (jumpTimerRef.current !== null) {
+      window.clearTimeout(jumpTimerRef.current);
+    }
+    const parsed = Number.parseInt(val.trim(), 10);
+    if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= effectiveTotal) {
+      jumpTimerRef.current = window.setTimeout(() => {
+        if (parsed - 1 !== currentIndex) {
+          setCurrentIndex(parsed - 1);
+          changeRandomLibraryBackground();
+          scrollToTop();
+        }
+      }, 280);
+    }
+  };
+
+  const commitJumpDraft = (val: string) => {
+    if (jumpTimerRef.current !== null) {
+      window.clearTimeout(jumpTimerRef.current);
+    }
+    const parsed = Number.parseInt(val.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      setJumpDraft(String(currentIndex + 1));
+      return;
+    }
+    applyJumpToNumber(parsed);
+  };
+
+  const applyTotalLimit = (num: number) => {
+    if (!currentDataset) return;
+    const clamped = Math.max(1, Math.min(num, currentDataset.questions.length));
+    setTestQuestionLimit(clamped);
+    setTotalDraft(String(clamped));
+    if (currentIndex >= clamped) {
+      setCurrentIndex(clamped - 1);
+      setJumpDraft(String(clamped));
+      changeRandomLibraryBackground();
+    }
+  };
+
+  const handleTotalDraftChange = (val: string) => {
+    setTotalDraft(val);
+    if (totalTimerRef.current !== null) {
+      window.clearTimeout(totalTimerRef.current);
+    }
+    if (!currentDataset) return;
+    const parsed = Number.parseInt(val.trim(), 10);
+    if (
+      !Number.isNaN(parsed) &&
+      parsed >= 1 &&
+      parsed <= currentDataset.questions.length
+    ) {
+      totalTimerRef.current = window.setTimeout(() => {
+        setTestQuestionLimit(parsed);
+        if (currentIndex >= parsed) {
+          setCurrentIndex(parsed - 1);
+          setJumpDraft(String(parsed));
+          changeRandomLibraryBackground();
+        }
+      }, 280);
+    }
+  };
+
+  const commitTotalDraft = (val: string) => {
+    if (totalTimerRef.current !== null) {
+      window.clearTimeout(totalTimerRef.current);
+    }
+    const parsed = Number.parseInt(val.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      setTotalDraft(String(effectiveTotal));
+      return;
+    }
+    applyTotalLimit(parsed);
   };
 
   const retryQuiz = () => {
@@ -283,15 +429,18 @@ export default function App() {
 
   const currentScene = darkAcademiaLibraryScenes[sceneIndex];
 
+  const activeQuestions = currentDataset
+    ? currentDataset.questions.slice(0, effectiveTotal)
+    : [];
   const correctCount =
     viewMode === 'result' && currentDataset
-      ? currentDataset.questions.reduce(
+      ? activeQuestions.reduce(
           (count, q, idx) =>
             isQuestionCorrect(userAnswers[idx], q) ? count + 1 : count,
           0
         )
       : 0;
-  const totalCount = currentDataset?.questions.length ?? 0;
+  const totalCount = activeQuestions.length;
   const incorrectCount = totalCount - correctCount;
   const percentage =
     totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
@@ -358,7 +507,7 @@ export default function App() {
           <div className="flex items-center space-x-3">
             <span className="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
               🏛️ {currentScene.name}
-              {showBackupPanel
+              {isTestMode
                 ? ` (${sceneIndex + 1}/${darkAcademiaLibraryScenes.length})`
                 : ''}
             </span>
@@ -412,10 +561,10 @@ export default function App() {
                       const val = e.target.value;
                       setSecretDraft(val);
                       if (val.trim().toLowerCase() === 'test') {
-                        setShowBackupPanel(true);
+                        setIsTestMode(true);
                         setShowSecretInput(false);
                         setSecretDraft('');
-                        showMessage('✦ バックアップ保存メニューを表示しました');
+                        showMessage('✦ テストモードに切り替えました。');
                       }
                     }}
                     onKeyDown={(e) => {
@@ -533,6 +682,7 @@ export default function App() {
                           </span>
                           <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                             全 {dataset.questions.length} 問収録
+                            {dataset.countSuffix ?? ''}
                           </span>
                         </div>
                         <h3 className="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
@@ -554,18 +704,18 @@ export default function App() {
               </div>
             )}
 
-            {/* バージョンバックアップ保存（通常非表示・ホームで "test" 入力で表示） */}
-            {showBackupPanel && (
+            {/* テストモード＆バージョンバックアップ保存（通常非表示・ホームで "test" 入力で表示） */}
+            {isTestMode && (
               <div className="bg-[#130f17]/90 border border-[#c5a059]/35 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg animate-fadeIn">
                 <div className="space-y-1">
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-bold text-[#d4af37] tracking-wider">
-                      💾 バージョンバックアップ（単体HTML保存）
+                      🛠️ テストモード・バックアップ保存（単体HTML）
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-[#a69a8c] leading-relaxed">
                     現在の全収録問題（全 {totalAllQuestions}{' '}
-                    問・図解含む）を1つのHTMLファイルとして保存します。エクスプローラーからダブルクリックだけで開けます。
+                    問・図解含む）を1つのHTMLファイルとして保存できます。問題画面では番号移動・全問数の変更も可能です（Escキーで通常モードに戻ります）。
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 shrink-0">
@@ -575,13 +725,6 @@ export default function App() {
                     className="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#211926] hover:bg-[#3a1c24] text-[#f3e5ab] text-xs sm:text-sm font-bold whitespace-nowrap transition shadow cursor-pointer"
                   >
                     📥 バックアップを保存
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowBackupPanel(false)}
-                    className="px-3.5 py-2.5 rounded-xl border border-[#c5a059]/30 bg-[#18131d] hover:bg-[#261d2e] text-[#9e9285] hover:text-[#f3e5ab] text-xs font-semibold whitespace-nowrap transition cursor-pointer"
-                  >
-                    閉じる
                   </button>
                 </div>
               </div>
@@ -598,10 +741,65 @@ export default function App() {
                 {currentDataset.title}
               </span>
               <div className="flex items-center space-x-3">
-                <span className="bg-[#2a1c30] px-4 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#c5a059]/60 shadow-inner">
-                  第 {currentIndex + 1} 問 / 全 {currentDataset.questions.length}{' '}
-                  問
-                </span>
+                {isTestMode ? (
+                  <div className="bg-[#2a1c30] px-3.5 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#d4af37] shadow-inner flex items-center gap-1.5">
+                    <span>第</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={effectiveTotal}
+                      aria-label="問題番号を指定"
+                      value={jumpDraft}
+                      onFocus={() => {
+                        editingJumpRef.current = true;
+                      }}
+                      onChange={(e) => handleJumpDraftChange(e.target.value)}
+                      onBlur={() => {
+                        editingJumpRef.current = false;
+                        commitJumpDraft(jumpDraft);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          editingJumpRef.current = false;
+                          commitJumpDraft(jumpDraft);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-12 text-center bg-[#120e16] border border-[#c5a059]/70 rounded-md px-1 py-0.5 text-[#ffd700] font-bold focus:outline-none focus:border-[#ffd700]"
+                    />
+                    <span>問 / 全</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={currentDataset.questions.length}
+                      aria-label="全問題数を変更"
+                      value={totalDraft}
+                      onFocus={() => {
+                        editingTotalRef.current = true;
+                      }}
+                      onChange={(e) => handleTotalDraftChange(e.target.value)}
+                      onBlur={() => {
+                        editingTotalRef.current = false;
+                        commitTotalDraft(totalDraft);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          editingTotalRef.current = false;
+                          commitTotalDraft(totalDraft);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-12 text-center bg-[#120e16] border border-[#c5a059]/70 rounded-md px-1 py-0.5 text-[#ffd700] font-bold focus:outline-none focus:border-[#ffd700]"
+                    />
+                    <span>問</span>
+                  </div>
+                ) : (
+                  <span className="bg-[#2a1c30] px-4 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#c5a059]/60 shadow-inner">
+                    第 {currentIndex + 1} 問 / 全 {effectiveTotal} 問
+                  </span>
+                )}
               </div>
             </div>
 
@@ -892,7 +1090,7 @@ export default function App() {
                 className="antique-btn px-7 py-3 rounded-xl font-bold text-sm transition flex items-center space-x-2 cursor-pointer"
               >
                 <span>
-                  {currentIndex === currentDataset.questions.length - 1
+                  {currentIndex >= effectiveTotal - 1
                     ? '✦ 最終結果へ ✦'
                     : '次へ ▶'}
                 </span>

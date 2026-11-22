@@ -3,7 +3,7 @@ import type { QuizDataset } from '../types/quiz';
 export const exam1Dataset: QuizDataset = {
   id: 'exam1_30',
   group: 'practice_set_1_2',
-  title: '第1回 3次元CAD利用技術者試験（全30問）',
+  title: '第1回 3次元CAD利用技術者試験',
   description:
     '製品開発の基本概念、モデリング手法（押し出し・ロフト・スイープ）、ソリッド表現（B-reps・CSG）、PDM/BOM、ネットワーク・セキュリティ、CAE/CAM/DMUまで全30問を完全収録。',
   questions: [

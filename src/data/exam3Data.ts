@@ -3,7 +3,7 @@ import type { QuizDataset } from '../types/quiz';
 export const exam3Dataset: QuizDataset = {
   id: 'exam3_45',
   group: 'practice_set_1_2',
-  title: '第3回 3次元CAD利用技術者試験（全45問）',
+  title: '第3回 3次元CAD利用技術者試験',
   description:
     'Part 1（選択問題30問）＋ Part 2（文章穴埋め問題15問・複数空欄対応）を完全収録。',
   questions: [

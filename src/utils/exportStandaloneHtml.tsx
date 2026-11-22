@@ -168,13 +168,22 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
 
     <div id="view-home" class="space-y-8 animate-fadeIn">
       <div class="text-center space-y-3 mb-8">
-        <span class="inline-block text-xs tracking-[0.2em] uppercase px-4 py-1 bg-[#261829] text-[#d4af37] font-semibold rounded-full border border-[#c5a059]/40">
+        <button type="button" onclick="toggleSecretInput()" class="inline-block text-xs tracking-[0.2em] uppercase px-4 py-1 bg-[#261829] text-[#d4af37] font-semibold rounded-full border border-[#c5a059]/40 cursor-pointer hover:border-[#ffd700] transition">
           ✦ ようこそ ✦
-        </span>
+        </button>
         <h2 class="classic-title text-3xl sm:text-4xl font-bold text-[#f3e5ab] drop-shadow">ホーム</h2>
         <p class="text-sm text-[#9e9285]">ファイルを1つお選びください。</p>
+        <div id="secret-input-wrap" class="hidden pt-2 flex items-center justify-center gap-2 animate-fadeIn">
+          <input id="secret-input" type="text" autocomplete="off" placeholder="コマンドを入力..." oninput="handleSecretInput(this.value)" onkeydown="if(event.key==='Escape'){closeSecretInput();}" class="w-52 px-3 py-1.5 rounded-lg bg-[#120e16] border border-[#c5a059]/60 text-[#f5efe6] placeholder-[#7d7267] text-xs focus:outline-none focus:border-[#ffd700]" />
+        </div>
       </div>
       <div id="file-list-container" class="grid grid-cols-1 gap-6"></div>
+      <div id="test-mode-home-bar" class="hidden bg-[#130f17]/90 border border-[#c5a059]/35 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg animate-fadeIn">
+        <div class="space-y-1">
+          <span class="text-xs font-bold text-[#d4af37] tracking-wider">🛠️ テストモード有効中</span>
+          <p class="text-xs sm:text-sm text-[#a69a8c] leading-relaxed">場所番号の表示と、問題画面での番号移動・全問数変更が有効です（Escキーで通常モードに戻ります）。</p>
+        </div>
+      </div>
     </div>
 
     <div id="view-quiz" class="hidden space-y-6 animate-fadeIn">
@@ -272,7 +281,17 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     let isTestMode = false;
+    let testQuestionLimit = null;
     let keyBuffer = '';
+    let jumpTimer = null;
+    let totalTimer = null;
+
+    function getEffectiveTotal() {
+      if (!currentDataset) return 0;
+      const max = currentDataset.questions.length;
+      if (testQuestionLimit === null) return max;
+      return Math.max(1, Math.min(testQuestionLimit, max));
+    }
 
     function updateSceneBadge() {
       const badge = document.getElementById('bg-scene-badge');
@@ -281,6 +300,62 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       badge.innerText = isTestMode
         ? '🏛️ ' + scene.name + ' (' + (lastBgIndex + 1) + '/' + darkAcademiaLibraryScenes.length + ')'
         : '🏛️ ' + scene.name;
+    }
+
+    function updateTestModeUI() {
+      updateSceneBadge();
+      const homeBar = document.getElementById('test-mode-home-bar');
+      if (homeBar) {
+        if (isTestMode) homeBar.classList.remove('hidden');
+        else homeBar.classList.add('hidden');
+      }
+      if (currentDataset && !document.getElementById('view-quiz').classList.contains('hidden')) {
+        renderQuizProgress();
+      }
+    }
+
+    function enterTestMode() {
+      const wasActive = isTestMode;
+      isTestMode = true;
+      closeSecretInput();
+      updateTestModeUI();
+      if (!wasActive) {
+        showMessage('✦ テストモードに切り替えました。');
+      }
+    }
+
+    function exitTestMode() {
+      isTestMode = false;
+      testQuestionLimit = null;
+      closeSecretInput();
+      keyBuffer = '';
+      updateTestModeUI();
+      showMessage('✦ テストモードを終了しました。');
+    }
+
+    function toggleSecretInput() {
+      const wrap = document.getElementById('secret-input-wrap');
+      const inp = document.getElementById('secret-input');
+      if (!wrap || !inp) return;
+      if (wrap.classList.contains('hidden')) {
+        wrap.classList.remove('hidden');
+        setTimeout(() => inp.focus(), 30);
+      } else {
+        closeSecretInput();
+      }
+    }
+
+    function closeSecretInput() {
+      const wrap = document.getElementById('secret-input-wrap');
+      const inp = document.getElementById('secret-input');
+      if (wrap) wrap.classList.add('hidden');
+      if (inp) inp.value = '';
+    }
+
+    function handleSecretInput(val) {
+      if (String(val || '').trim().toLowerCase() === 'test') {
+        enterTestMode();
+      }
     }
 
     function changeRandomLibraryBackground() {
@@ -301,12 +376,12 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     document.addEventListener('keydown', function(e) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const homeEl = document.getElementById('view-home');
-      if (!homeEl || homeEl.classList.contains('hidden')) {
-        keyBuffer = '';
+      if (e.key === 'Escape' && isTestMode) {
+        e.preventDefault();
+        exitTestMode();
         return;
       }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
       let ch = '';
@@ -316,8 +391,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       keyBuffer = (keyBuffer + ch).slice(-16);
       if (keyBuffer.endsWith('test')) {
         keyBuffer = '';
-        isTestMode = true;
-        updateSceneBadge();
+        enterTestMode();
       }
     }, true);
 
@@ -407,7 +481,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
           '<div class="space-y-2">'
           + '<div class="flex items-center space-x-2.5">'
           + '<span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">御試みの書 ' + scrollLabel + '</span>'
-          + '<span class="text-xs text-[#d4af37] font-bold tracking-wider">全 ' + dataset.questions.length + ' 問収録</span>'
+          + '<span class="text-xs text-[#d4af37] font-bold tracking-wider">全 ' + dataset.questions.length + ' 問収録' + escapeHtml(dataset.countSuffix || '') + '</span>'
           + '</div>'
           + '<h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">' + escapeHtml(dataset.title) + '</h3>'
           + '<p class="text-sm text-[#a69a8c] leading-relaxed">' + escapeHtml(dataset.description) + '</p>'
@@ -421,6 +495,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       currentDataset = quizDatasets.find(d => d.id === datasetId);
       if (!currentDataset) return;
       currentIndex = 0;
+      testQuestionLimit = null;
       userAnswers = new Array(currentDataset.questions.length).fill(null);
       isAnswered = false;
       changeRandomLibraryBackground();
@@ -429,17 +504,104 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       document.getElementById('view-quiz').classList.remove('hidden');
       document.getElementById('home-btn-header').classList.remove('hidden');
       document.getElementById('quiz-file-title').innerText = currentDataset.title;
+      updateTestModeUI();
       loadQuestion();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    function renderQuizProgress() {
+      const progressEl = document.getElementById('quiz-progress-text');
+      if (!progressEl || !currentDataset) return;
+      const total = getEffectiveTotal();
+      if (isTestMode) {
+        progressEl.className = 'bg-[#2a1c30] px-3.5 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#d4af37] shadow-inner inline-flex items-center gap-1.5';
+        progressEl.innerHTML =
+          '<span>第</span>'
+          + '<input id="test-jump-input" type="number" min="1" max="' + total + '" value="' + (currentIndex + 1) + '" class="w-12 text-center bg-[#120e16] border border-[#c5a059]/70 rounded-md px-1 py-0.5 text-[#ffd700] font-bold focus:outline-none focus:border-[#ffd700]" />'
+          + '<span>問 / 全</span>'
+          + '<input id="test-total-input" type="number" min="1" max="' + currentDataset.questions.length + '" value="' + total + '" class="w-12 text-center bg-[#120e16] border border-[#c5a059]/70 rounded-md px-1 py-0.5 text-[#ffd700] font-bold focus:outline-none focus:border-[#ffd700]" />'
+          + '<span>問</span>';
+        const jumpInp = document.getElementById('test-jump-input');
+        const totalInp = document.getElementById('test-total-input');
+        if (jumpInp) {
+          jumpInp.oninput = function() {
+            if (jumpTimer) clearTimeout(jumpTimer);
+            const val = parseInt(this.value, 10);
+            const eff = getEffectiveTotal();
+            if (!isNaN(val) && val >= 1 && val <= eff) {
+              jumpTimer = setTimeout(() => {
+                if (val - 1 !== currentIndex) {
+                  currentIndex = val - 1;
+                  changeRandomLibraryBackground();
+                  loadQuestion();
+                }
+              }, 280);
+            }
+          };
+          jumpInp.onblur = function() {
+            if (jumpTimer) clearTimeout(jumpTimer);
+            const eff = getEffectiveTotal();
+            const val = parseInt(this.value, 10);
+            const clamped = isNaN(val) ? currentIndex + 1 : Math.max(1, Math.min(val, eff));
+            this.value = clamped;
+            if (clamped - 1 !== currentIndex) {
+              currentIndex = clamped - 1;
+              changeRandomLibraryBackground();
+              loadQuestion();
+            }
+          };
+          jumpInp.onkeydown = function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); this.blur(); }
+          };
+        }
+        if (totalInp) {
+          totalInp.oninput = function() {
+            if (totalTimer) clearTimeout(totalTimer);
+            const val = parseInt(this.value, 10);
+            const max = currentDataset.questions.length;
+            if (!isNaN(val) && val >= 1 && val <= max) {
+              totalTimer = setTimeout(() => {
+                testQuestionLimit = val;
+                if (currentIndex >= val) {
+                  currentIndex = val - 1;
+                  changeRandomLibraryBackground();
+                  loadQuestion();
+                } else {
+                  document.getElementById('next-btn-text').innerText = (currentIndex >= val - 1) ? '✦ 最終結果へ ✦' : '次へ ▶';
+                }
+              }, 280);
+            }
+          };
+          totalInp.onblur = function() {
+            if (totalTimer) clearTimeout(totalTimer);
+            const max = currentDataset.questions.length;
+            const val = parseInt(this.value, 10);
+            const clamped = isNaN(val) ? getEffectiveTotal() : Math.max(1, Math.min(val, max));
+            testQuestionLimit = clamped;
+            this.value = clamped;
+            if (currentIndex >= clamped) {
+              currentIndex = clamped - 1;
+              changeRandomLibraryBackground();
+            }
+            loadQuestion();
+          };
+          totalInp.onkeydown = function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); this.blur(); }
+          };
+        }
+      } else {
+        progressEl.className = 'bg-[#2a1c30] px-4 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#c5a059]/60 shadow-inner';
+        progressEl.innerText = '第 ' + (currentIndex + 1) + ' 問 / 全 ' + total + ' 問';
+      }
+      document.getElementById('next-btn-text').innerText = (currentIndex >= total - 1) ? '✦ 最終結果へ ✦' : '次へ ▶';
+    }
+
     function loadQuestion() {
-      const total = currentDataset.questions.length;
       const q = currentDataset.questions[currentIndex];
       const savedAnswer = userAnswers[currentIndex];
       isAnswered = (savedAnswer !== null);
 
-      document.getElementById('quiz-progress-text').innerText = '第 ' + (currentIndex + 1) + ' 問 / 全 ' + total + ' 問';
+      renderQuizProgress();
       document.getElementById('current-q-badge').innerHTML = '<span>❖ 問題 ' + (currentIndex + 1) + '</span>';
       document.getElementById('question-text').innerText = q.question;
 
@@ -596,13 +758,14 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         expBox.classList.add('hidden');
       }
 
+      const total = getEffectiveTotal();
       const prevBtn = document.getElementById('prev-btn');
       prevBtn.disabled = (currentIndex === 0);
       prevBtn.style.opacity = (currentIndex === 0) ? '0.4' : '1';
       prevBtn.style.cursor = (currentIndex === 0) ? 'not-allowed' : 'pointer';
 
       const nextBtnText = document.getElementById('next-btn-text');
-      nextBtnText.innerText = (currentIndex === total - 1) ? '✦ 最終結果へ ✦' : '次へ ▶';
+      nextBtnText.innerText = (currentIndex >= total - 1) ? '✦ 最終結果へ ✦' : '次へ ▶';
     }
 
     function normalizeAnswer(str) {
@@ -667,7 +830,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     function nextQuestion() {
-      const total = currentDataset.questions.length;
+      const total = getEffectiveTotal();
       const q = currentDataset.questions[currentIndex];
       if (!isAnswered && userAnswers[currentIndex] === null) {
         showMessage((q.type === 'fill' || q.type === 'multi_fill')
@@ -700,8 +863,8 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       document.getElementById('view-result').classList.remove('hidden');
       let correctCount = 0;
       let incorrectCount = 0;
-      const total = currentDataset.questions.length;
-      currentDataset.questions.forEach((q, idx) => {
+      const total = getEffectiveTotal();
+      currentDataset.questions.slice(0, total).forEach((q, idx) => {
         if (isQuestionCorrect(userAnswers[idx], q)) correctCount++;
         else incorrectCount++;
       });

@@ -2,7 +2,8 @@ import type { QuizDataset } from '../types/quiz';
 
 export const diagramExamDataset: QuizDataset = {
   id: 'diagram_2kyu_40',
-  title: '図問題集（全40問・10図解）',
+  title: '図問題集',
+  countSuffix: '・10図解',
   description:
     '3次元CAD利用技術者試験2級の「モデリング手順の空欄補充問題」形式。ご提示の2図解（カップ形状・ガイドブロック）に加え、ロフト・ドラフト・円周パターン・ブーリアン演算・パイプ継手など計10テーマの図解付き全40問を完全収録。',
   questions: [
