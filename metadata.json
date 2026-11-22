@@ -1,0 +1,6 @@
+{
+  "name": "Daia's３次元ＣＡＤ対策",
+  "description": "3次元CAD利用技術者試験2級対策用の演習問題集・図問題集アプリ。第1回〜第4回および図問題集を収録。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

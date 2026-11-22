@@ -1,0 +1,2509 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daia's３次元ＣＡＤ対策</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Cinzel, Playfair Display & Noto Serif JP -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Noto+Serif+JP:wght@400;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Serif JP', serif;
+            background-color: #09070a;
+            color: #e6dfd3;
+            overflow-x: hidden;
+        }
+        .classic-title {
+            font-family: 'Cinzel', 'Playfair Display', 'Noto Serif JP', serif;
+        }
+        /* Dark Academia Library Dynamic Background Layers */
+        #library-bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            transition: opacity 0.8s ease-in-out, background-image 0.6s ease-in-out;
+        }
+        #library-bg-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: radial-gradient(circle at 50% 35%, rgba(13, 10, 14, 0.58) 0%, rgba(7, 5, 9, 0.88) 100%);
+            backdrop-filter: blur(2px);
+            pointer-events: none;
+        }
+        /* Antique Mysterious Dark Card */
+        .antique-card {
+            background: linear-gradient(145deg, rgba(24, 20, 28, 0.90) 0%, rgba(15, 12, 19, 0.94) 100%);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(197, 160, 89, 0.5);
+            box-shadow: 0 20px 45px -15px rgba(0, 0, 0, 0.95), inset 0 1px 0 rgba(212, 175, 55, 0.2);
+            position: relative;
+        }
+        .antique-card::before {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border: 1px solid rgba(197, 160, 89, 0.18);
+            border-radius: inherit;
+            pointer-events: none;
+        }
+        .antique-btn {
+            background: linear-gradient(135deg, #3a1c24 0%, #241116 100%);
+            color: #f3e5ab;
+            border: 1px solid #c5a059;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+            transition: all 0.25s ease;
+        }
+        .antique-btn:hover {
+            background: linear-gradient(135deg, #522531 0%, #33161e 100%);
+            border-color: #ffd700;
+            box-shadow: 0 0 15px rgba(197, 160, 89, 0.35);
+            transform: translateY(-1px);
+        }
+        .antique-option {
+            background-color: rgba(24, 19, 29, 0.88);
+            border: 1px solid rgba(197, 160, 89, 0.32);
+            color: #dfd7c8;
+            transition: all 0.2s ease;
+        }
+        .antique-option:hover:not(:disabled) {
+            background-color: rgba(58, 43, 66, 0.78);
+            border-color: #d4af37;
+            box-shadow: 0 0 12px rgba(212, 175, 55, 0.22);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.35s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-[#722f37] selection:text-[#f3e5ab]">
+
+    <!-- Dark Academia Library Background & Vignette -->
+    <div id="library-bg-layer"></div>
+    <div id="library-bg-overlay"></div>
+
+    <!-- Header -->
+    <header class="bg-[#09070a]/90 backdrop-blur-md text-[#e6dfd3] py-5 px-4 border-b border-[#c5a059]/40 shadow-[0_4px_20px_rgba(0,0,0,0.8)] sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="flex items-center space-x-3 cursor-pointer group" onclick="goToHome()">
+                <div class="p-2 rounded-full border border-[#c5a059]/50 bg-[#1a141e] group-hover:border-[#ffd700] transition">
+                    <svg class="w-6 h-6 text-[#d4af37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                    </svg>
+                </div>
+                <div>
+                    <span class="block text-[10px] tracking-[0.25em] text-[#c5a059]">Daia's３次元ＣＡＤ対策</span>
+                    <h1 class="classic-title text-xl sm:text-2xl font-bold tracking-wider text-[#f3e5ab]">3次元CAD利用技術者試験２級</h1>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="bg-scene-badge" class="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
+                    🏛️ 書庫情景 1/10
+                </span>
+                <button id="home-btn-header" onclick="goToHome()" class="hidden text-xs sm:text-sm px-4 py-2 rounded-lg bg-[#1d1722] hover:bg-[#3a1c24] text-[#d4af37] border border-[#c5a059]/50 transition shadow">
+                    🗝️ ホームへ戻る
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-3xl w-full mx-auto p-4 sm:p-6 my-6">
+
+        <!-- Custom Message Box (Replaces alert) -->
+        <div id="custom-toast" class="hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-[#2a151b] border border-[#d4af37] text-[#f3e5ab] px-6 py-3 rounded-xl shadow-2xl text-sm font-semibold animate-fadeIn">
+            <span id="custom-toast-msg"></span>
+        </div>
+
+        <!-- VIEW 1: HOME (FILE SELECTION) -->
+        <div id="view-home" class="space-y-8 animate-fadeIn">
+            <div class="text-center space-y-3 mb-8">
+                <span class="inline-block text-xs tracking-[0.2em] uppercase px-4 py-1 bg-[#261829] text-[#d4af37] font-semibold rounded-full border border-[#c5a059]/40">
+                    ✦ ようこそ ✦
+                </span>
+                <h2 class="classic-title text-3xl sm:text-4xl font-bold text-[#f3e5ab] drop-shadow">ホーム</h2>
+                <p class="text-sm text-[#9e9285]">ファイルを1つお選びください。</p>
+            </div>
+
+            <div id="file-list-container" class="grid grid-cols-1 gap-6">
+                <!-- Dynamically injected file cards -->
+            </div>
+        </div>
+
+        <!-- VIEW 2: QUIZ SCREEN -->
+        <div id="view-quiz" class="hidden space-y-6 animate-fadeIn">
+            <!-- Top Progress Indicator -->
+            <div class="bg-[#151118] border border-[#c5a059]/30 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-lg">
+                <span id="quiz-file-title" class="font-bold text-[#d4af37] text-sm sm:text-base tracking-wide"></span>
+                <div class="flex items-center space-x-3">
+                    <span id="quiz-progress-text" class="bg-[#2a1c30] px-4 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#c5a059]/60 shadow-inner">
+                        第 1 問 / 全 30 問
+                    </span>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="antique-card rounded-2xl p-6 sm:p-8 space-y-6">
+                <!-- Question Number & Text -->
+                <div class="space-y-3">
+                    <div class="inline-flex items-center space-x-2 text-xs uppercase tracking-widest font-bold text-[#c5a059] bg-[#211926] px-3 py-1 rounded border border-[#c5a059]/40" id="current-q-badge">
+                        <span>❖ 問題 1</span>
+                    </div>
+                    <!-- Diagram Container (Shown only for diagram questions) -->
+                    <div id="question-diagram-container" class="hidden my-4 p-3 sm:p-4 bg-[#f8f6f0] rounded-xl border-2 border-[#c5a059]/70 shadow-inner overflow-x-auto">
+                    </div>
+                    <h3 id="question-text" class="text-lg sm:text-xl font-bold text-[#f5efe6] leading-relaxed">
+                        ここに問題文が表示されます。
+                    </h3>
+                </div>
+
+                <!-- Options List -->
+                <div id="options-container" class="space-y-3">
+                    <!-- Dynamically injected options -->
+                </div>
+
+                <!-- Explanation Box (Shown after answering) -->
+                <div id="explanation-box" class="hidden mt-6 p-5 rounded-xl border-l-4 transition-all animate-fadeIn">
+                    <div class="flex items-center space-x-2 font-bold mb-2" id="explanation-header">
+                        <!-- Correct/Incorrect icon & title -->
+                    </div>
+                    <div id="explanation-text" class="text-sm sm:text-base leading-relaxed"></div>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons (Prev / Next) -->
+            <div class="flex items-center justify-between pt-2">
+                <button onclick="prevQuestion()" id="prev-btn" class="px-5 py-3 rounded-xl border border-[#c5a059]/40 text-[#c9beae] bg-[#1a151f] hover:bg-[#2a2133] hover:text-[#f3e5ab] font-semibold text-sm transition flex items-center space-x-2 shadow">
+                    <span>◀ 戻る</span>
+                </button>
+                <button onclick="nextQuestion()" id="next-btn" class="antique-btn px-7 py-3 rounded-xl font-bold text-sm transition flex items-center space-x-2">
+                    <span id="next-btn-text">次へ ▶</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW 3: RESULT SCREEN -->
+        <div id="view-result" class="hidden space-y-6 animate-fadeIn">
+            <div class="antique-card rounded-2xl p-8 sm:p-10 text-center space-y-8">
+                <div class="space-y-3">
+                    <span class="inline-block text-xs uppercase tracking-[0.25em] text-[#d4af37] font-bold px-4 py-1 bg-[#261829] rounded-full border border-[#c5a059]/40">
+                        ✦ 試練の記録 ✦
+                    </span>
+                    <h2 class="classic-title text-3xl sm:text-4xl font-bold text-[#f3e5ab]">最終鑑定結果</h2>
+                    <p class="text-sm text-[#a69a8c]" id="result-file-subtitle"></p>
+                </div>
+
+                <!-- Score Stats Box -->
+                <div class="bg-[#120e16] border border-[#c5a059]/50 rounded-xl p-6 max-w-lg mx-auto grid grid-cols-3 gap-4 shadow-inner">
+                    <div class="text-center border-r border-[#c5a059]/25 pr-2">
+                        <span class="block text-xs text-[#9e9285] font-semibold mb-1">正解した回数</span>
+                        <span id="stat-correct" class="text-2xl sm:text-3xl font-bold text-emerald-400">0</span>
+                    </div>
+                    <div class="text-center border-r border-[#c5a059]/25 pr-2">
+                        <span class="block text-xs text-[#9e9285] font-semibold mb-1">間違えた回数</span>
+                        <span id="stat-incorrect" class="text-2xl sm:text-3xl font-bold text-rose-400">0</span>
+                    </div>
+                    <div class="text-center">
+                        <span class="block text-xs text-[#9e9285] font-semibold mb-1">正解率</span>
+                        <span id="stat-percentage" class="text-2xl sm:text-3xl font-bold text-[#f3e5ab]">0%</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons: Home & Retry -->
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+                    <button onclick="goToHome()" class="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2">
+                        <span>🗝️ ホームに戻る</span>
+                    </button>
+                    <button onclick="retryQuiz()" class="w-full sm:w-auto antique-btn px-8 py-3.5 rounded-xl font-bold shadow-lg transition flex items-center justify-center space-x-2">
+                        <span>🕯️ もう一度挑戦する</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-[#09070a] text-[#6e6359] text-xs py-4 text-center border-t border-[#c5a059]/20">
+        <p>Gutta cavat lapidem.</p>
+    </footer>
+
+    <!-- Application Script -->
+    <script>
+        // 10 Dark Academia Library Backgrounds (High-resolution photos + Atmospheric SVG Bookcase Fallbacks)
+        const darkAcademiaLibraryScenes = [
+            {
+                name: "大聖堂の古書回廊",
+                url: "https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#1c120c", "#3b2316", "#8c6239", "#d4af37"]
+            },
+            {
+                name: "燭台灯る深夜の閲覧室",
+                url: "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#141018", "#2d1e2f", "#6b4423", "#c5a059"]
+            },
+            {
+                name: "螺旋階段と天蓋書架",
+                url: "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#161311", "#33261d", "#735338", "#e6c27a"]
+            },
+            {
+                name: "深緑のランプと羊皮紙机",
+                url: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#0d1714", "#1b332b", "#4a3520", "#d4af37"]
+            },
+            {
+                name: "修道院の禁書保管庫",
+                url: "https://images.unsplash.com/photo-1568667256549-094345857637?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#191114", "#361d24", "#704228", "#c5a059"]
+            },
+            {
+                name: "王立学院の古典書庫",
+                url: "https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#141219", "#292236", "#5e432c", "#e0be75"]
+            },
+            {
+                name: "重厚なオーク材の書棚",
+                url: "https://images.unsplash.com/photo-1529148482759-b35b25c5f217?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#18110d", "#382419", "#784c2a", "#d4af37"]
+            },
+            {
+                name: "月光差すゴシック図書室",
+                url: "https://images.unsplash.com/photo-1535905557558-afc4877a26fc?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#0e111a", "#1e2538", "#4f3a28", "#c5a059"]
+            },
+            {
+                name: "錬金術師の私設書斎",
+                url: "https://images.unsplash.com/photo-1516979187457-637abb4f9353?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#171210", "#33231c", "#6e472b", "#f3e5ab"]
+            },
+            {
+                name: "古地図と革装丁の書架",
+                url: "https://images.unsplash.com/photo-1457369804613-52c61a468e7d?auto=format&fit=crop&w=1920&q=80",
+                palette: ["#151012", "#2e1f24", "#664529", "#d4af37"]
+            }
+        ];
+
+        let lastBgIndex = -1;
+
+        // Generate an intricate Dark Academia SVG library fallback in case an image is slow/blocked
+        function createLibraryFallbackSvg(palette) {
+            const [bgDark, shelfWood, bookTone, goldAccent] = palette;
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+                    <defs>
+                        <radialGradient id="glow" cx="50%" cy="40%" r="60%">
+                            <stop offset="0%" stop-color="${goldAccent}" stop-opacity="0.22"/>
+                            <stop offset="100%" stop-color="${bgDark}" stop-opacity="0.95"/>
+                        </radialGradient>
+                    </defs>
+                    <rect width="800" height="600" fill="${bgDark}"/>
+                    <!-- Arched Gothic Windows & Shelves -->
+                    <g opacity="0.55">
+                        <rect x="40" y="30" width="210" height="540" rx="100" fill="${shelfWood}" stroke="${goldAccent}" stroke-width="2"/>
+                        <rect x="295" y="15" width="210" height="570" rx="100" fill="${shelfWood}" stroke="${goldAccent}" stroke-width="2"/>
+                        <rect x="550" y="30" width="210" height="540" rx="100" fill="${shelfWood}" stroke="${goldAccent}" stroke-width="2"/>
+                        <!-- Bookshelves horizontal bars & book spines -->
+                        <line x1="40" y1="160" x2="760" y2="160" stroke="${goldAccent}" stroke-width="3"/>
+                        <line x1="40" y1="280" x2="760" y2="280" stroke="${goldAccent}" stroke-width="3"/>
+                        <line x1="40" y1="400" x2="760" y2="400" stroke="${goldAccent}" stroke-width="3"/>
+                        <line x1="40" y1="510" x2="760" y2="510" stroke="${goldAccent}" stroke-width="3"/>
+                        <rect x="75" y="105" width="18" height="55" fill="${bookTone}"/>
+                        <rect x="98" y="98" width="22" height="62" fill="${bgDark}" stroke="${goldAccent}" stroke-width="1"/>
+                        <rect x="125" y="110" width="16" height="50" fill="${bookTone}"/>
+                        <rect x="330" y="215" width="24" height="65" fill="${bookTone}"/>
+                        <rect x="360" y="225" width="18" height="55" fill="${bgDark}" stroke="${goldAccent}" stroke-width="1"/>
+                        <rect x="385" y="210" width="20" height="70" fill="${bookTone}"/>
+                        <rect x="590" y="335" width="22" height="65" fill="${bookTone}"/>
+                        <rect x="618" y="345" width="16" height="55" fill="${bgDark}" stroke="${goldAccent}" stroke-width="1"/>
+                        <rect x="640" y="330" width="24" height="70" fill="${bookTone}"/>
+                    </g>
+                    <rect width="800" height="600" fill="url(#glow)"/>
+                </svg>
+            `;
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+        }
+
+        // Pick a random library background (different from previous page) on every page transition
+        function changeRandomLibraryBackground() {
+            const bgLayer = document.getElementById('library-bg-layer');
+            const badge = document.getElementById('bg-scene-badge');
+            if (!bgLayer) return;
+
+            let nextIndex;
+            do {
+                nextIndex = Math.floor(Math.random() * darkAcademiaLibraryScenes.length);
+            } while (nextIndex === lastBgIndex && darkAcademiaLibraryScenes.length > 1);
+
+            lastBgIndex = nextIndex;
+            const scene = darkAcademiaLibraryScenes[nextIndex];
+            const fallbackUrl = createLibraryFallbackSvg(scene.palette);
+
+            // Set procedural library fallback immediately so it never flashes blank, then layer photo
+            bgLayer.style.backgroundImage = `url('${scene.url}'), ${fallbackUrl}`;
+
+            if (badge) {
+                badge.innerText = `🏛️ ${scene.name} (${nextIndex + 1}/10)`;
+            }
+        }
+
+        // Complete Quiz Datasets (1st Exam: 30 Questions, 2nd Exam: 45 Questions)
+        const quizDatasets = [
+            {
+                id: "exam1_30",
+                group: "practice_set_1_2",
+                title: "第1回 3次元CAD利用技術者試験（全30問）",
+                description: "製品開発の基本概念、モデリング手法（押し出し・ロフト・スイープ）、ソリッド表現（B-reps・CSG）、PDM/BOM、ネットワーク・セキュリティ、CAE/CAM/DMUまで全30問を完全収録。",
+                questions: [
+                    {
+                        question: "3次元CADで部品や図面などに付加される、材質・名称・管理情報などの情報を何というか。",
+                        options: ["属性", "フィーチャ", "メッシュ", "レイヤー"],
+                        correctAnswer: "属性",
+                        explanation: "【属性】部品や図面などの形状データに付随する、材質・部品番号・作成者などの管理情報やメタデータを「属性（アトリビュート）」と呼びます。（フィーチャは穴や溝などの形状要素、メッシュは解析用の要素分割、レイヤーは表示管理の層です）",
+                        point: "形状以外の付加情報（材質・部品番号・作成者など）＝属性。"
+                    },
+                    {
+                        question: "製品開発の複数の工程を並行して進め、開発期間の短縮を図る考え方として最も適切なものはどれか。",
+                        options: ["リバースエンジニアリング", "コンカレント・エンジニアリング", "ラピッドプロトタイピング", "シーケンシャル・エンジニアリング"],
+                        correctAnswer: "コンカレント・エンジニアリング",
+                        explanation: "【コンカレント・エンジニアリング】設計・解析・生産技術・購買などの複数工程を同時並行で進め、開発期間の短縮と手戻り防止を図る手法です。（シーケンシャルは直列・順番に進める従来手法、リバースエンジニアリングは実物からのデータ復元、ラピッドプロトタイピングは高速試作です）",
+                        point: "複数工程を同時並行して期間短縮＝コンカレント・エンジニアリング。"
+                    },
+                    {
+                        question: "3次元CADで、製品を構成する個々の部品形状を作成するためのモデルとして最も適切なものはどれか。",
+                        options: ["パーツモデル", "アセンブリモデル", "ネットリスト", "BOM"],
+                        correctAnswer: "パーツモデル",
+                        explanation: "【パーツモデル】製品を構成する単一の部品（ボルト1本、カバー1つなど）を表現した3次元モデルです。（アセンブリモデルは複数部品の組立体、ネットリストは電子回路の接続情報、BOMは部品表です）",
+                        point: "単一の部品モデル＝パーツモデル。"
+                    },
+                    {
+                        question: "複数の部品を組み合わせて、製品全体の構成や部品間の位置関係を表現するモデルはどれか。",
+                        options: ["サーフェスモデル", "パーツモデル", "アセンブリモデル", "ワイヤーフレームモデル"],
+                        correctAnswer: "アセンブリモデル",
+                        explanation: "【アセンブリモデル】複数のパーツモデルを組み合わせ、拘束条件によって位置関係を定義した製品全体の組立モデルです。",
+                        point: "複数部品を組み合わせた組立モデル＝アセンブリモデル。"
+                    },
+                    {
+                        question: "断面となる2次元形状を、直線方向に移動させて立体を作成する代表的なモデリング操作はどれか。",
+                        options: ["押し出し", "回転", "スイープ", "シェル"],
+                        correctAnswer: "押し出し",
+                        explanation: "【押し出し】2次元スケッチで描いた閉じた断面を、垂直方向（直線方向）に一定の距離だけ移動させて立体を生成する基本操作です。",
+                        point: "断面を直線方向にまっすぐ伸ばす＝押し出し。"
+                    },
+                    {
+                        question: "複数の異なる断面形状を滑らかにつないで立体や曲面を作成する機能はどれか。",
+                        options: ["トリム", "ロフト", "オフセット", "面取り"],
+                        correctAnswer: "ロフト",
+                        explanation: "【ロフト】異なる位置・形状の複数断面（例：円から四角形など）を滑らかに補間してつなぎ、立体や曲面を生成する機能です。",
+                        point: "異なる複数の断面を滑らかにつなぐ＝ロフト。"
+                    },
+                    {
+                        question: "断面形状を指定した経路に沿って移動させ、立体や曲面を作成する機能はどれか。",
+                        options: ["スイープ", "フィレット", "シェル", "ミラー"],
+                        correctAnswer: "スイープ",
+                        explanation: "【スイープ】2次元の断面形状を、指定した曲線や折れ線などの軌道（パス）に沿って移動させてパイプやレール状の立体を作成する機能です。",
+                        point: "断面を指定した経路（パス）に沿って動かす＝スイープ。"
+                    },
+                    {
+                        question: "2つのソリッド形状を組み合わせ、新しい形状を作る際に使用する「和・差・積」などの演算を総称して何というか。",
+                        options: ["ブーリアン演算", "マスプロパティ", "レンダリング", "パラメトリック演算"],
+                        correctAnswer: "ブーリアン演算",
+                        explanation: "【ブーリアン演算】集合演算を用いて、2つの立体を合体させる「和（Union）」、削り取る「差（Difference）」、重なり部分だけを残す「積（Intersection）」を行う処理です。",
+                        point: "立体同士の「和・差・積」の集合演算＝ブーリアン演算。"
+                    },
+                    {
+                        question: "3次元モデルから体積、表面積、重心などの物理的特性を求める機能を何というか。",
+                        options: ["マスプロパティ", "トポロジー", "シェーディング", "テクスチャマッピング"],
+                        correctAnswer: "マスプロパティ",
+                        explanation: "【マスプロパティ】ソリッドモデルの体積・表面積・重心・慣性モーメント、および密度を設定した際の質量を計算する機能です。",
+                        point: "体積・表面積・重心・質量・慣性モーメント＝マスプロパティ。"
+                    },
+                    {
+                        question: "自由曲線や自由曲面を数学的に表現する方法として、多くの3次元CADで利用されているものはどれか。",
+                        options: ["ASCII", "NURBS", "JPEG", "STL"],
+                        correctAnswer: "NURBS",
+                        explanation: "【NURBS（非一様有理Bスプライン）】制御点と重み付けによって、滑らかな自由曲線・自由曲面から正確な円弧まで統一的に表現できる数学的手法です。",
+                        point: "自由曲線・自由曲面の標準的な数学表現＝NURBS。"
+                    },
+                    {
+                        question: "3次元形状を「頂点・稜線・面」などの境界情報によって表現するソリッドモデルの方式はどれか。",
+                        options: ["CSG", "B-reps", "ボクセル", "ラスタ"],
+                        correctAnswer: "B-reps",
+                        explanation: "【B-reps（Boundary Representation：境界表現）】立体の外周を構成する「頂点（Vertex）・稜線（Edge）・面（Face）」の位相情報と幾何情報でソリッドを表現する方式です。",
+                        point: "頂点・稜線・面の境界情報で表現＝B-reps（境界表現）。"
+                    },
+                    {
+                        question: "基本的な立体形状を集合演算によって組み合わせてソリッドモデルを表現する方式はどれか。",
+                        options: ["CSG", "B-reps", "NURBS", "ポリゴン"],
+                        correctAnswer: "CSG",
+                        explanation: "【CSG（Constructive Solid Geometry）】直方体・円柱・球などの基本立体（プリミティブ）をブーリアン演算（和・差・積）で組み合わせて形状を構築する方式です。",
+                        point: "基本立体を集合演算で組み合わせる＝CSG。"
+                    },
+                    {
+                        question: "3次元CADで作成したモデルに対して、部品同士が重なっていないかを確認する機能として最も適切なものはどれか。",
+                        options: ["干渉チェック", "レンダリング", "シェーディング", "データ圧縮"],
+                        correctAnswer: "干渉チェック",
+                        explanation: "【干渉チェック】アセンブリモデル内で、複数の部品が物理的に重なり合ったりめり込んだりしていないかを自動検出する機能です。",
+                        point: "部品同士の重なり・めり込みを検出＝干渉チェック。"
+                    },
+                    {
+                        question: "部品同士の位置関係や自由度を定義して組み立てる作業に最も関係するものはどれか。",
+                        options: ["アセンブリ拘束", "テクスチャ", "メッシュ分割", "データ圧縮"],
+                        correctAnswer: "アセンブリ拘束",
+                        explanation: "【アセンブリ拘束】部品の面同士の一致、軸の同心、距離や角度などを指定し、空間内の移動・回転の自由度を制限して組み立てる機能です。",
+                        point: "一致・同心・距離などで部品の位置を決める＝アセンブリ拘束。"
+                    },
+                    {
+                        question: "異なるCADシステム間で3次元製品データを交換するために利用される代表的な標準フォーマットはどれか。",
+                        options: ["STEP", "MP3", "PNG", "HTML"],
+                        correctAnswer: "STEP",
+                        explanation: "【STEP】ISO 10303として規定された、異なるCADシステム間で3次元形状や製品属性データを正確に交換するための国際標準中間ファイル形式です。",
+                        point: "異種CAD間のデータ交換用標準規格＝STEP。"
+                    },
+                    {
+                        question: "3次元CADデータを別のCADへ変換した際、形状の一部が欠けたり正しく接続されなかったりするなど、データ品質上の問題を表す用語はどれか。",
+                        options: ["PDQ", "CPU", "VPN", "CAM"],
+                        correctAnswer: "PDQ",
+                        explanation: "【PDQ（Product Data Quality：製品データ品質）】3次元CADデータの品質基準や不具合（微小エッジ、面の隙間、ねじれなど）を扱う概念・ガイドラインです。",
+                        point: "製品データの品質基準・不具合対策＝PDQ。"
+                    },
+                    {
+                        question: "製品に関するCADデータ、設計情報、文書、変更履歴などを一元的に管理する仕組みとして最も適切なものはどれか。",
+                        options: ["PDM", "CAM", "FTP", "CG"],
+                        correctAnswer: "PDM",
+                        explanation: "【PDM（Product Data Management）】設計・開発で生じるCADデータ、図面、仕様書、リビジョン（改訂履歴）、承認ステータスなどを一元管理するシステムです。",
+                        point: "CADデータ・設計文書・変更履歴の一元管理＝PDM。"
+                    },
+                    {
+                        question: "製品を構成する部品や材料などを一覧として管理する「部品表」を表す略語はどれか。",
+                        options: ["BOM", "CPU", "CAD", "CAE"],
+                        correctAnswer: "BOM",
+                        explanation: "【BOM（Bill of Materials）】製品を製造するために必要な部品・原材料の名称、品番、数量、階層構造などをまとめた「部品表」です。",
+                        point: "部品や材料の一覧表（部品表）＝BOM。"
+                    },
+                    {
+                        question: "離れた拠点間などで、インターネットを利用しながら安全な仮想専用ネットワークを構築する技術はどれか。",
+                        options: ["VPN", "DNS", "USB", "HTML"],
+                        correctAnswer: "VPN",
+                        explanation: "【VPN（Virtual Private Network）】公衆回線（インターネット）上に認証や暗号化技術を用いて仮想的な専用線を構築し、安全な通信を実現する技術です。",
+                        point: "インターネット上の仮想専用ネットワーク＝VPN。"
+                    },
+                    {
+                        question: "ネットワーク機器に割り当てられ、機器を識別するために使用される固有の識別情報はどれか。",
+                        options: ["MACアドレス", "ファイル名", "パスワード", "拡張子"],
+                        correctAnswer: "MACアドレス",
+                        explanation: "【MACアドレス】LANカードやWi-Fiモジュールなどのネットワーク機器に製造時に割り当てられる、世界中で一意の物理アドレス（48ビット）です。",
+                        point: "ネットワーク機器固有の物理アドレス＝MACアドレス。"
+                    },
+                    {
+                        question: "複数のストレージを組み合わせ、データを分散・冗長化することで性能や信頼性を高める技術はどれか。",
+                        options: ["RAID", "CAD", "CAM", "TCP"],
+                        correctAnswer: "RAID",
+                        explanation: "【RAID】複数台のHDDやSSDを仮想的に1つのドライブとして扱い、ストライピング（高速化）やミラーリング（耐障害性・冗長化）を行う技術です。",
+                        point: "複数ストレージの分散・冗長化技術＝RAID。"
+                    },
+                    {
+                        question: "CADデータを利用して、製品に加わる力や変形、熱などをコンピュータ上で解析する技術はどれか。",
+                        options: ["CAE", "CAM", "CAT", "PDM"],
+                        correctAnswer: "CAE",
+                        explanation: "【CAE（Computer Aided Engineering）】試作前にコンピュータ上で強度・応力・振動・熱伝導・流体などのシミュレーション解析を行う技術です。",
+                        point: "強度・変形・熱などの解析・シミュレーション＝CAE。"
+                    },
+                    {
+                        question: "CADで作成した形状データなどを利用して、工作機械で加工するためのNCデータ作成などを支援する技術はどれか。",
+                        options: ["CAM", "CAE", "PDM", "CG"],
+                        correctAnswer: "CAM",
+                        explanation: "【CAM（Computer Aided Manufacturing）】3次元CADの形状データをもとに、工具経路（ツールパス）やNC工作機械を制御するNCプログラムを生成する技術です。",
+                        point: "工作機械用の工具経路・NCデータ作成＝CAM。"
+                    },
+                    {
+                        question: "コンピュータを利用して製品の検査や試験を支援する技術を表すものはどれか。",
+                        options: ["CAT", "CAM", "PDM", "CAD"],
+                        correctAnswer: "CAT",
+                        explanation: "【CAT（Computer Aided Testing）】コンピュータを活用して製品の品質検査、測定、耐久試験などの計画・実行・データ分析を支援する技術です。",
+                        point: "製品の検査・試験の支援＝CAT（Testing）。"
+                    },
+                    {
+                        question: "実物の製品などを3次元スキャナで計測し、その形状データからCADモデルを作成するような手法と特に関係が深いものはどれか。",
+                        options: ["リバースエンジニアリング", "コンカレント・エンジニアリング", "PDM", "レンダリング"],
+                        correctAnswer: "リバースエンジニアリング",
+                        explanation: "【リバースエンジニアリング】既存の製品やクレイモデルを3Dスキャナ等で計測（点群取得）し、そこから3次元CADデータや設計図面を復元・作成する手法です。",
+                        point: "実物を計測してCADデータを復元＝リバースエンジニアリング。"
+                    },
+                    {
+                        question: "3次元CADモデルを利用して、実物を作る前に製品の組立性、干渉、操作性などを仮想的に検討する仕組みはどれか。",
+                        options: ["DMU", "DNS", "CPU", "FTP"],
+                        correctAnswer: "DMU",
+                        explanation: "【DMU（Digital Mock-Up：デジタルモックアップ）】実物の試作品を作る前に、コンピュータ上の3次元アセンブリモデルで組立手順や干渉、メンテナンス性を検証する手法です。",
+                        point: "実試作前のデジタル上での組立・干渉検証＝DMU。"
+                    },
+                    {
+                        question: "3Dプリンタで広く利用される、熱可塑性樹脂などを溶かしてノズルから押し出し、積層する造形方式はどれか。",
+                        options: ["FDM", "光造形", "切削加工", "鍛造"],
+                        correctAnswer: "FDM",
+                        explanation: "【FDM（熱溶解積層方式）】ABSやPLAなどの熱可塑性樹脂フィラメントをヒーターで溶融し、ノズルから押し出しながら一層ずつ積み上げて造形する方式です。",
+                        point: "熱可塑性樹脂を溶かして押し出し積層＝FDM（熱溶解積層方式）。"
+                    },
+                    {
+                        question: "液状の光硬化性樹脂に光を照射して硬化させ、層を積み重ねて立体を作る3Dプリンタ方式はどれか。",
+                        options: ["光造形", "FDM", "旋削", "プレス加工"],
+                        correctAnswer: "光造形",
+                        explanation: "【光造形方式（SLA/DLP）】液体の光硬化性樹脂（レジン）に紫外線レーザーやプロジェクタ光を照射して1層ずつ硬化・積層する、高精度な造形方式です。",
+                        point: "光硬化性樹脂（レジン）に光照射して硬化＝光造形。"
+                    },
+                    {
+                        question: "3次元CADの表示で、物体表面の明暗を計算し、立体感のある表示を行う処理はどれか。",
+                        options: ["シェーディング", "ブーリアン演算", "PDM", "拘束"],
+                        correctAnswer: "シェーディング",
+                        explanation: "【シェーディング（陰影処理）】光源の位置と面の向き（法線ベクトル）から光の反射や陰影を計算し、モデルに立体感を与えて描画する処理です。",
+                        point: "表面の明暗・陰影を計算して立体表示＝シェーディング。"
+                    },
+                    {
+                        question: "3次元CADを製品開発に利用する効果として最も適切なものはどれか。",
+                        options: ["設計変更が一切発生しなくなる", "試作や検証をデジタル上で行うことで、実試作の回数を減らせる場合がある", "製造工程がすべて不要になる", "CADを導入すれば設計者の専門知識が不要になる"],
+                        correctAnswer: "試作や検証をデジタル上で行うことで、実試作の回数を減らせる場合がある",
+                        explanation: "【デジタル検証による試作削減】3次元CADやCAE/DMUを活用することで、形状把握や干渉確認を早期に行え、高コストな実試作の回数や開発期間を削減できます。（設計変更や実試験・製造工程が完全にゼロになるわけではありません）",
+                        point: "3次元CADの効果＝デジタル検証により実試作の回数・コスト・期間を削減できる。"
+                    }
+                ]
+            },
+            {
+                id: "exam2_45",
+                group: "practice_set_1_2",
+                title: "第2回 3次元CAD利用技術者試験（全45問）",
+                description: "Part 1（選択問題30問）＋ Part 2（重要用語 穴埋め入力15問）を完全収録。",
+                questions: [
+                    {
+                        question: "3次元CADで扱われるモデルのうち、頂点と稜線を中心に形状を表現し、面や内部の情報を持たないモデルはどれか。",
+                        options: ["ソリッドモデル", "サーフェスモデル", "ワイヤーフレームモデル", "アセンブリモデル"],
+                        correctAnswer: "ワイヤーフレームモデル",
+                        explanation: "ワイヤーフレームモデルは、点（頂点）と線（稜線）を使って形状を表現します。面や立体内部の情報を持たないため、構造が単純でデータ量を小さくできますが、複雑な形状では前後関係が分かりにくくなることがあります。",
+                        point: "点＋線＝ワイヤーフレーム。"
+                    },
+                    {
+                        question: "物体の表面を面によって表現するが、一般に内部が詰まった立体としての情報を持たないモデルはどれか。",
+                        options: ["ワイヤーフレームモデル", "サーフェスモデル", "ソリッドモデル", "ボクセルモデル"],
+                        correctAnswer: "サーフェスモデル",
+                        explanation: "サーフェスモデルは、物体の表面を「面」で表現するモデルです。複雑な曲面を表現するのに適していますが、ソリッドモデルのように内部まで含んだ立体として扱うものではありません。",
+                        point: "ワイヤーフレーム＝線 ／ サーフェス＝面 ／ ソリッド＝立体（この3つはセットで覚えましょう）"
+                    },
+                    {
+                        question: "物体の表面だけでなく内部・外部を区別でき、体積などの情報を扱えるモデルはどれか。",
+                        options: ["ソリッドモデル", "ワイヤーフレームモデル", "2次元モデル", "レイヤーモデル"],
+                        correctAnswer: "ソリッドモデル",
+                        explanation: "ソリッドモデルは、物体を中身の詰まった立体として表現します。そのため体積や質量、重心などを計算したり、部品同士の干渉を調べたりできます。",
+                        point: "内部・外部を区別できる立体＝ソリッドモデル。"
+                    },
+                    {
+                        question: "3次元空間を小さな立方体などの集合として分割し、形状を表現する方式として最も適切なものはどれか。",
+                        options: ["NURBS", "ボクセル", "B-reps", "ベジェ曲線"],
+                        correctAnswer: "ボクセル",
+                        explanation: "ボクセル（Voxel）は、3次元空間を小さな立方体状の要素に分割して表現する方法です。2次元画像の「ピクセル」を3次元にしたものと考えると分かりやすいです。",
+                        point: "Pixel＝2次元の小さな要素 ／ Voxel＝3次元の小さな要素"
+                    },
+                    {
+                        question: "3次元CADにおける「フィーチャ」の説明として最も適切なものはどれか。",
+                        options: ["モデルの画面上の色だけを管理する機能", "穴、溝、突起など、形状に意味を持たせた構成要素", "CADデータを圧縮する方式", "ネットワーク上のコンピュータを識別する情報"],
+                        correctAnswer: "穴、溝、突起など、形状に意味を持たせた構成要素",
+                        explanation: "フィーチャとは、穴、溝、突起など、設計上の意味を持った形状の構成要素です。現在の3次元CADでは、このフィーチャを組み合わせながらモデルを作成する方法が広く利用されています。",
+                        point: "穴・溝・突起など「意味を持った形状」＝フィーチャ。"
+                    },
+                    {
+                        question: "寸法などのパラメータを変更することで、それに応じてモデル形状を変更できる設計手法として最も適切なものはどれか。",
+                        options: ["パラメトリックモデリング", "レンダリング", "ラスタライズ", "リバースエンジニアリング"],
+                        correctAnswer: "パラメトリックモデリング",
+                        explanation: "寸法や角度などをパラメータとして設定し、その値を変更することでモデル形状を連動して変更できる方法です。例えば穴径を「10mm」から「15mm」に変更すると、それに合わせてモデルが再計算されます。",
+                        point: "数値を変更 → 形状も連動して変化＝パラメトリック。"
+                    },
+                    {
+                        question: "スケッチに対して「この2本の線は平行」「この線は水平」などの条件を設定することを何というか。",
+                        options: ["拘束", "属性", "干渉", "投影"],
+                        correctAnswer: "拘束",
+                        explanation: "拘束とは、スケッチなどの形状に幾何学的な条件を与えることです。平行、垂直、水平、一致、同心などの条件があります。",
+                        point: "形状の位置や関係を決めるルール＝拘束。"
+                    },
+                    {
+                        question: "円などの2次元断面を、ある軸を中心に回転させて立体形状を作る操作として最も適切なものはどれか。",
+                        options: ["押し出し", "回転", "スイープ", "ロフト"],
+                        correctAnswer: "回転",
+                        explanation: "断面形状を指定した軸の周囲に回転させて3次元形状を作ります。円筒状・軸対称の部品などを作る際によく利用されます。",
+                        point: "押し出し＝まっすぐ動かす ／ 回転＝軸を中心に回す ／ スイープ＝経路に沿って動かす ／ ロフト＝複数の断面をつなぐ"
+                    },
+                    {
+                        question: "立体の角に丸みを付けるモデリング機能はどれか。",
+                        options: ["フィレット", "シェル", "トリム", "ミラー"],
+                        correctAnswer: "フィレット",
+                        explanation: "フィレットは、形状の角や稜線に丸みを付ける機能です。機械部品などでも非常によく利用されます。",
+                        point: "角を丸くする＝フィレット。"
+                    },
+                    {
+                        question: "ソリッドモデルの内部をくり抜き、一定の肉厚を持つ薄肉形状を作成する機能はどれか。",
+                        options: ["ロフト", "シェル", "スイープ", "オフセット"],
+                        correctAnswer: "シェル",
+                        explanation: "シェルは、ソリッドモデルの内部をくり抜いて一定の肉厚を持たせる機能です。ケースや容器のような形状を作る際に利用できます。",
+                        point: "中身をくり抜いて一定の厚みを残す＝シェル。"
+                    },
+                    {
+                        question: "同じ穴や突起などを一定間隔で複数配置する際に利用する機能として最も適切なものはどれか。",
+                        options: ["パターン", "トリム", "マスプロパティ", "シェーディング"],
+                        correctAnswer: "パターン",
+                        explanation: "同じフィーチャや形状を規則的に複製する機能です。直線状に並べる場合や、円周上に並べる場合などがあります。",
+                        point: "同じ形を規則的に繰り返す＝パターン。"
+                    },
+                    {
+                        question: "作成した形状を基準面などに対して対称な位置へ複製する機能はどれか。",
+                        options: ["ミラー", "スイープ", "シェル", "ロフト"],
+                        correctAnswer: "ミラー",
+                        explanation: "基準となる面や平面に対して、鏡に映したような対称形状を作る機能です。",
+                        point: "左右対称にコピー＝ミラー。"
+                    },
+                    {
+                        question: "アセンブリモデルにおいて、部品同士が物理的に重なっている箇所を検出する機能はどれか。",
+                        options: ["干渉チェック", "マスプロパティ", "レンダリング", "フィレット"],
+                        correctAnswer: "干渉チェック",
+                        explanation: "組み立てた部品同士が、本来存在できない位置で重なっていないかを確認します。製造前に設計上の問題を発見するために重要な機能です。",
+                        point: "部品同士がぶつかっていないか＝干渉チェック。"
+                    },
+                    {
+                        question: "3次元モデルから重心や体積などを求める機能として最も適切なものはどれか。",
+                        options: ["マスプロパティ", "PDM", "PDQ", "DMU"],
+                        correctAnswer: "マスプロパティ",
+                        explanation: "3次元モデルから体積、表面積、重心などの物理的特性を求めます。材質・密度などの情報が設定されていれば質量も求められます。",
+                        point: "体積・表面積・重心・質量＝マスプロパティ。"
+                    },
+                    {
+                        question: "異なるCADシステム間でデータを受け渡す際に使用される中間ファイル形式として最も適切なものはどれか。",
+                        options: ["STEP", "DOCX", "MP4", "WAV"],
+                        correctAnswer: "STEP",
+                        explanation: "STEPは、異なるCADシステム間で製品データを交換するための代表的な標準規格です。",
+                        point: "異なるCAD間のデータ交換＝STEP。"
+                    },
+                    {
+                        question: "製品データの品質を表し、異なるCAD間でのデータ交換時の形状欠落などにも関係する考え方はどれか。",
+                        options: ["PDQ", "BOM", "RAID", "VPN"],
+                        correctAnswer: "PDQ",
+                        explanation: "PDQ（Product Data Quality）は製品データの品質を意味します。CADデータを別システムへ渡した際の形状欠落や不正確な接続など、データ品質上の問題に関係します。",
+                        point: "製品データの品質＝PDQ。"
+                    },
+                    {
+                        question: "CADデータや設計文書、変更履歴など、製品開発に関係するデータを管理するシステムはどれか。",
+                        options: ["PDM", "CAM", "CAE", "CAT"],
+                        correctAnswer: "PDM",
+                        explanation: "PDM（Product Data Management）は、CADデータ、図面、設計文書、変更履歴などの製品データを管理する仕組みです。",
+                        point: "製品データを管理＝PDM。"
+                    },
+                    {
+                        question: "製品を構成する部品の種類、数量などを管理する部品表を何というか。",
+                        options: ["BOM", "DMU", "PDQ", "NURBS"],
+                        correctAnswer: "BOM",
+                        explanation: "BOM（Bill of Materials）は製品を構成する部品や材料を一覧化した部品表です。",
+                        point: "部品表＝BOM。"
+                    },
+                    {
+                        question: "コンピュータの主記憶装置として、実行中のプログラムやデータを一時的に保持するものはどれか。",
+                        options: ["RAM", "SSD", "CPU", "GPU"],
+                        correctAnswer: "RAM",
+                        explanation: "RAMは、CPUが処理するプログラムやデータを一時的に置いておく主記憶装置です。一般的なRAMは電源を切ると内容が失われます。SSDはデータを長期間保存する補助記憶装置です。",
+                        point: "RAM＝作業中のデータを一時保存 ／ SSD＝データを長期保存"
+                    },
+                    {
+                        question: "HDDと比較した一般的なSSDの特徴として、最も適切なものはどれか。",
+                        options: ["機械的に回転するディスクを使用する", "可動部がなく、高速なデータアクセスが可能", "必ずHDDより保存容量が大きい", "電源を切ると保存データが消える"],
+                        correctAnswer: "可動部がなく、高速なデータアクセスが可能",
+                        explanation: "SSDは半導体メモリを利用するため、HDDのような回転ディスクや磁気ヘッドなどの機械的な可動部を持ちません。一般に高速なアクセスが可能です。",
+                        point: "HDD＝磁気ディスク ／ SSD＝半導体メモリ"
+                    },
+                    {
+                        question: "情報セキュリティの基本的な3要素に含まれないものはどれか。",
+                        options: ["機密性", "完全性", "可用性", "生産性"],
+                        correctAnswer: "生産性",
+                        explanation: "情報セキュリティの基本的な3要素は、機密性（Confidentiality）、完全性（Integrity）、可用性（Availability）です。頭文字から「CIA」と呼ばれることもあります。",
+                        point: "情報セキュリティの3要素＝機密性・完全性・可用性。"
+                    },
+                    {
+                        question: "第三者に知られてはならない情報を、許可された人だけが利用できる状態にするという情報セキュリティ上の性質はどれか。",
+                        options: ["機密性", "完全性", "可用性", "拡張性"],
+                        correctAnswer: "機密性",
+                        explanation: "機密性とは、許可された人だけが情報にアクセスできる状態を維持することです。対して完全性は「データが勝手に改ざんされていないこと」、可用性は「必要なときに利用できること」を意味します。",
+                        point: "機密性＝見せない ／ 完全性＝変えさせない ／ 可用性＝使える"
+                    },
+                    {
+                        question: "設計した部品について、力を加えた際の応力や変形などをコンピュータ上で解析する技術はどれか。",
+                        options: ["CAE", "CAM", "CAT", "PDM"],
+                        correctAnswer: "CAE",
+                        explanation: "CAE（Computer Aided Engineering）は、コンピュータを利用して設計・解析を支援します。強度、応力、変形、熱、流体などのシミュレーションに利用されます。",
+                        point: "解析・シミュレーション＝CAE。"
+                    },
+                    {
+                        question: "CADモデルをもとに、工作機械による加工のための工具経路やNCデータの作成を支援する技術はどれか。",
+                        options: ["CAM", "CAE", "CAT", "DMU"],
+                        correctAnswer: "CAM",
+                        explanation: "CAM（Computer Aided Manufacturing）はコンピュータによる製造支援です。CADモデルをもとに工具経路を計算し、NC工作機械などで使用するデータを作成できます。",
+                        point: "CAM＝製造。"
+                    },
+                    {
+                        question: "製品の検査・試験をコンピュータによって支援する技術はどれか。",
+                        options: ["CAT", "CAM", "CAE", "CAD"],
+                        correctAnswer: "CAT",
+                        explanation: "CAT（Computer Aided Testing）は、コンピュータを利用して製品の検査や試験を支援する技術です。",
+                        point: "CAD＝設計 ／ CAE＝解析 ／ CAM＝製造 ／ CAT＝検査・試験（4つまとめて覚えましょう）"
+                    },
+                    {
+                        question: "実際の製品を作る前に、3次元CADモデルを用いて組立性や干渉などを仮想空間で検証する考え方はどれか。",
+                        options: ["DMU", "BOM", "VPN", "RAID"],
+                        correctAnswer: "DMU",
+                        explanation: "DMU（Digital Mock-Up）は、3次元CADモデルを利用してコンピュータ上に仮想的な製品を構築し、組立性や干渉などを検証する方法です。",
+                        point: "実物の試作品を作る前にデジタルで検証＝DMU。"
+                    },
+                    {
+                        question: "実在する製品や部品を3次元スキャナなどで測定し、そのデータをもとにCADモデルを作成する手法はどれか。",
+                        options: ["リバースエンジニアリング", "コンカレント・エンジニアリング", "パラメトリックモデリング", "レンダリング"],
+                        correctAnswer: "リバースエンジニアリング",
+                        explanation: "通常は「設計データ→実物」という流れですが、リバースエンジニアリングでは既存の実物を測定・解析してデジタルモデルを作ります。",
+                        point: "実物 → CADデータ＝リバースエンジニアリング。"
+                    },
+                    {
+                        question: "3Dプリンタの方式のうち、熱可塑性樹脂などを加熱してノズルから押し出しながら積層する方式はどれか。",
+                        options: ["FDM", "光造形", "切削加工", "放電加工"],
+                        correctAnswer: "FDM",
+                        explanation: "FDMは、樹脂などを加熱して溶かし、ノズルから押し出して一層ずつ積み上げる造形方式です。",
+                        point: "熱で溶かす → ノズルから出す → 積む＝FDM。"
+                    },
+                    {
+                        question: "3Dプリンタで使用するために、3次元モデルの表面形状を多数の三角形によって近似して表現する代表的なファイル形式はどれか。",
+                        options: ["STL", "STEP", "JPEG", "PDF"],
+                        correctAnswer: "STL",
+                        explanation: "STLは、3次元モデルの表面を多数の三角形（ポリゴン）によって近似して表現するファイル形式です。3Dプリンタへのデータ受け渡しで広く利用されています。STEPとは用途が違うので注意しましょう。",
+                        point: "STEP＝CAD間の製品データ交換 ／ STL＝三角形で表面を近似、3Dプリンタなどで利用"
+                    },
+                    {
+                        question: "3次元CADを製品開発で利用する効果として最も適切なものはどれか。",
+                        options: ["CADを導入すれば実物による試験は一切不要になる", "設計情報を3次元化することで、形状の把握や設計検証を行いやすくなる", "CADを利用すれば設計変更は発生しなくなる", "CADによって製造工程そのものが不要になる"],
+                        correctAnswer: "設計情報を3次元化することで、形状の把握や設計検証を行いやすくなる",
+                        explanation: "3次元CADを利用することで、形状を視覚的に把握したり、干渉確認や解析などを行ったりしやすくなります。ただし、CADは設計や製造を「支援する」道具であり、実物による検証や設計者の知識、製造工程そのものを不要にするものではありません。",
+                        point: "3次元CAD＝設計・検証を支援する道具。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】製品を構成する一つひとつの部品を表現した3次元モデルを（　　　　　　）モデルという。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "パーツ",
+                        acceptedAnswers: ["パーツ", "パーツモデル"],
+                        explanation: "一つひとつの部品を表現したものがパーツモデルです。複数のパーツモデルを組み合わせるとアセンブリモデルになります。",
+                        point: "1部品＝パーツ ／ 複数部品＝アセンブリ"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】複数の部品を組み合わせ、製品全体の構成や部品同士の位置関係を表現したものを（　　　　　　）モデルという。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "アセンブリ",
+                        acceptedAnswers: ["アセンブリ", "アセンブリモデル"],
+                        explanation: "複数のパーツを組み立てて製品全体を表現したモデルです。部品同士の位置関係や干渉などを確認できます。",
+                        point: "Assembly＝組み立て。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】2次元の断面形状を直線方向に移動させて3次元形状を作成する操作を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "押し出し",
+                        acceptedAnswers: ["押し出し", "おしだし", "押出し"],
+                        explanation: "2次元形状をまっすぐ移動させて立体を作ります。例えば円を押し出すと円柱になります。",
+                        point: "まっすぐ伸ばす＝押し出し（Extrude）。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】複数の異なる断面形状を滑らかにつないで立体や曲面を作成する機能を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "ロフト",
+                        acceptedAnswers: ["ロフト", "ろふと"],
+                        explanation: "複数の断面形状を滑らかにつなぎ、途中で形状が変化するような立体・曲面を作ります。",
+                        point: "複数の断面をつなぐ＝ロフト。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】断面形状を指定された経路に沿って移動させて立体や曲面を作成する機能を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "スイープ",
+                        acceptedAnswers: ["スイープ", "すいーぷ"],
+                        explanation: "断面を決められた経路に沿って移動させます。曲がったパイプなどをイメージすると分かりやすいです。",
+                        point: "押し出し＝直線方向 ／ スイープ＝経路に沿う ／ ロフト＝複数断面をつなぐ"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】複数の立体に対して「和・差・積」を行って新しい形状を作る演算を（　　　　　　）演算という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "ブーリアン",
+                        acceptedAnswers: ["ブーリアン", "ブーリアン演算", "ぶーりあん"],
+                        explanation: "立体同士を足したり、引いたり、共通部分だけを取り出したりする演算です。",
+                        point: "和＝合わせる ／ 差＝削る ／ 積＝重なったところ"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】自由曲線や自由曲面を数学的に表現するために3次元CADで広く利用される手法の一つを（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "NURBS",
+                        acceptedAnswers: ["NURBS", "nurbs"],
+                        explanation: "NURBSは、滑らかな自由曲線・自由曲面を数学的に表現できる方法です。複雑な曲面を持つ製品のモデリングなどで利用されます。",
+                        point: "滑らかな自由曲線・自由曲面＝NURBS。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】立体を頂点・稜線・面などの「境界」によって表現する方式を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "B-reps",
+                        acceptedAnswers: ["B-reps", "b-reps", "BREPS", "breps", "B-rep", "b-rep"],
+                        explanation: "B-repsはBoundary Representationの略です。立体の境界を構成する頂点、稜線、面などによって形状を表現します。",
+                        point: "Boundary＝境界 → B-reps。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】直方体、円柱、球などの基本立体を組み合わせてソリッドモデルを表現する方式を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "CSG",
+                        acceptedAnswers: ["CSG", "csg"],
+                        explanation: "CSGは基本立体をブーリアン演算などによって組み合わせて複雑な立体を作る方式です。",
+                        point: "B-reps＝境界で表現 ／ CSG＝基本立体を組み合わせて表現"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】異なるCADシステム間で製品データを交換するための代表的な標準規格の一つを（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "STEP",
+                        acceptedAnswers: ["STEP", "step"],
+                        explanation: "STEPは異なるCADシステム間で製品データを交換するために利用される代表的な標準規格です。",
+                        point: "CAD ↔ CAD＝STEP。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】CADデータや設計文書、変更履歴などの製品データを管理する仕組みを、アルファベット3文字で（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "PDM",
+                        acceptedAnswers: ["PDM", "pdm"],
+                        explanation: "PDM（Product Data Management）は、製品開発に関係するさまざまなデータを一元的に管理する仕組みです。",
+                        point: "Product Data Management＝PDM。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】製品を構成する部品や材料などをまとめた「部品表」を、アルファベット3文字で（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "BOM",
+                        acceptedAnswers: ["BOM", "bom"],
+                        explanation: "BOM（Bill of Materials）は、製品に必要な部品や材料、その数量などをまとめた部品表です。",
+                        point: "Bill of Materials＝部品表＝BOM。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】コンピュータを利用して、製品の強度、変形、熱、流体などを解析・シミュレーションする技術を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "CAE",
+                        acceptedAnswers: ["CAE", "cae"],
+                        explanation: "CAE（Computer Aided Engineering）は、設計した製品の強度、変形、熱、流体などをコンピュータ上で解析するために利用されます。",
+                        point: "CAE＝解析・シミュレーション。"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】コンピュータを利用して製造を支援し、CADデータから工作機械用の工具経路やNCデータを作成する技術を（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "CAM",
+                        acceptedAnswers: ["CAM", "cam"],
+                        explanation: "CAM（Computer Aided Manufacturing）は製造支援の技術です。CADで作った形状を、実際に工作機械でどう加工するかにつなげます。",
+                        point: "CAD＝設計 ／ CAM＝製造"
+                    },
+                    {
+                        type: "fill",
+                        question: "【Part 2 重要用語 穴埋め問題】3次元CADモデルを使って仮想的な製品を構築し、実物を製作する前に組立性や干渉などを検証する仕組みを（　　　　　　）という。",
+                        placeholder: "用語を入力してください",
+                        correctAnswer: "DMU",
+                        acceptedAnswers: ["DMU", "dmu"],
+                        explanation: "DMU（Digital Mock-Up）は「デジタル上の試作品」と考えると分かりやすいです。実物の試作品を作る前に、組立性や部品同士の干渉などを検証できます。",
+                        point: "Digital Mock-Up＝DMU＝デジタル上で試作・検証。"
+                    }
+                ]
+            },
+            {
+                id: "exam3_45",
+                group: "practice_set_1_2",
+                title: "第3回 3次元CAD利用技術者試験（全45問）",
+                description: "Part 1（選択問題30問）＋ Part 2（文章穴埋め問題15問・複数空欄対応）を完全収録。",
+                questions: [
+                    // Part 1 選択問題（問題1〜30）
+                    {
+                        question: "3次元CADで使用される座標系について、X軸・Y軸・Z軸が互いに直交する座標系を何というか。",
+                        options: ["極座標系", "直交座標系", "円筒座標系", "投影座標系"],
+                        correctAnswer: "直交座標系",
+                        explanation: "【直交座標系】X軸・Y軸・Z軸が原点で互いに90度（直角）に交わる最も基本的な3次元座標系です。（極座標系や円筒座標系は距離と角度で位置を表します）",
+                        point: "X・Y・Z軸が互いに直角に交わる＝直交座標系。"
+                    },
+                    {
+                        question: "3次元モデルを構成する要素のうち、「2つの面の境界」となるものはどれか。",
+                        options: ["頂点", "稜線", "ソリッド", "ボクセル"],
+                        correctAnswer: "稜線",
+                        explanation: "【稜線（エッジ）】立体の隣り合う2つの面が交わる境界線（エッジ）のことです。",
+                        point: "面と面の境界線＝稜線（エッジ）。"
+                    },
+                    {
+                        question: "3次元モデルを構成する要素のうち、稜線の端点となるものはどれか。",
+                        options: ["頂点", "面", "フィーチャ", "サーフェス"],
+                        correctAnswer: "頂点",
+                        explanation: "【頂点（バーテックス）】稜線（エッジ）の両端にある点のことです。",
+                        point: "稜線の端点＝頂点（バーテックス）。"
+                    },
+                    {
+                        question: "ワイヤーフレームモデルの特徴として最も適切なものはどれか。",
+                        options: ["物体の体積を正確に計算できる", "点と線を中心に形状を表現する", "物体の内部と外部を明確に区別できる", "必ずNURBS曲面によって構成される"],
+                        correctAnswer: "点と線を中心に形状を表現する",
+                        explanation: "【点と線を中心に形状を表現】ワイヤーフレームモデルは頂点と稜線（針金細工のような情報）のみで表現するため、面や体積・内外の区別は持ちません。",
+                        point: "点（頂点）と線（稜線）のみで表現＝ワイヤーフレームモデル。"
+                    },
+                    {
+                        question: "サーフェスモデルの特徴として最も適切なものはどれか。",
+                        options: ["面を使って物体の表面形状を表現できる", "点だけで物体を表現する", "必ず内部が詰まった立体になる", "部品表を表現するためのモデルである"],
+                        correctAnswer: "面を使って物体の表面形状を表現できる",
+                        explanation: "【面を使って表面形状を表現】サーフェスモデルは厚みを持たない「面」の集合で物体の外表面や複雑な自由曲面を表現します。",
+                        point: "面で表面形状を表現（中身は詰まっていない）＝サーフェスモデル。"
+                    },
+                    {
+                        question: "ソリッドモデルがサーフェスモデルと比較して得意とする処理はどれか。",
+                        options: ["体積の計算", "文書管理", "ネットワーク通信", "画像圧縮"],
+                        correctAnswer: "体積の計算",
+                        explanation: "【体積の計算】ソリッドモデルは物体の内部と外部の領域が明確に定義された中身の詰まった立体であるため、体積・質量・重心計算や干渉チェックが可能です。",
+                        point: "中身が詰まった立体＝体積・質量計算や干渉チェックが可能。"
+                    },
+                    {
+                        question: "曲線や曲面の形状を制御するために配置される点を一般に何というか。",
+                        options: ["制御点", "重心点", "干渉点", "投影点"],
+                        correctAnswer: "制御点",
+                        explanation: "【制御点（コントロールポイント）】ベジェ曲線やBスプライン・NURBSなどの自由曲線・自由曲面の曲がり具合をコントロールするために配置する点です。",
+                        point: "曲線・曲面の形を引っ張って調整する点＝制御点。"
+                    },
+                    {
+                        question: "自由曲線・自由曲面の表現に利用されるNURBSの特徴として適切なものはどれか。",
+                        options: ["滑らかで複雑な曲線や曲面を表現できる", "直線しか表現できない", "ネットワーク通信を高速化する", "CADファイルを暗号化する"],
+                        correctAnswer: "滑らかで複雑な曲線や曲面を表現できる",
+                        explanation: "【滑らかで複雑な曲線や曲面を表現】NURBS（非一様有理Bスプライン）は、制御点と重みを用いることで自動車のボディのような滑らかな自由曲面から正確な円弧まで表現できます。",
+                        point: "滑らかな自由曲線・自由曲面の標準表現＝NURBS。"
+                    },
+                    {
+                        question: "3次元CADで、穴・溝・突起など設計上の意味を持った形状要素を何というか。",
+                        options: ["フィーチャ", "ボクセル", "レイヤー", "ピクセル"],
+                        correctAnswer: "フィーチャ",
+                        explanation: "【フィーチャ】押し出し・穴・溝・フィレット・リブなど、単なる幾何要素ではなく設計上の意味を持つ形状単位です。",
+                        point: "穴・溝・突起など意味を持つ形状要素＝フィーチャ。"
+                    },
+                    {
+                        question: "フィーチャを作成した順序などを記録し、それを利用してモデルを編集する方式に最も関係が深いものはどれか。",
+                        options: ["ヒストリーベースモデリング", "レンダリング", "リバースエンジニアリング", "ラスタモデリング"],
+                        correctAnswer: "ヒストリーベースモデリング",
+                        explanation: "【ヒストリーベースモデリング】フィーチャの作成手順（履歴＝ヒストリー）をツリー構造で記録し、過去の操作に戻って寸法や条件を編集・再計算できる方式です。",
+                        point: "作成順序（履歴）を記録して後から編集＝ヒストリーベースモデリング。"
+                    },
+                    {
+                        question: "寸法や角度などの値を変更すると、その設定に基づいてモデル形状が更新される方式を何というか。",
+                        options: ["パラメトリックモデリング", "ポリゴンモデリング", "レンダリング", "シェーディング"],
+                        correctAnswer: "パラメトリックモデリング",
+                        explanation: "【パラメトリックモデリング】寸法や幾何拘束をパラメータ（変数）として保持し、数値変更に連動してモデル形状が自動更新される手法です。",
+                        point: "寸法・角度の値変更に連動して形状更新＝パラメトリックモデリング。"
+                    },
+                    {
+                        question: "スケッチに「水平」「垂直」「平行」「一致」などの条件を設定する操作を何というか。",
+                        options: ["拘束", "属性", "干渉", "投影"],
+                        correctAnswer: "拘束",
+                        explanation: "【拘束（幾何拘束）】2次元スケッチの線や円に対して、位置・向き・関係性のルール（水平・垂直・平行・同心・接線など）を定義する操作です。",
+                        point: "水平・垂直・平行・一致などの条件設定＝拘束。"
+                    },
+                    {
+                        question: "スケッチが必要以上に動かないよう、寸法や幾何拘束によって形状を完全に決定した状態を一般に何というか。",
+                        options: ["完全拘束", "完全干渉", "完全投影", "完全属性"],
+                        correctAnswer: "完全拘束",
+                        explanation: "【完全拘束】すべての頂点や線分の位置・サイズが寸法拘束と幾何拘束によって一意に定まり、自由度がゼロになった安定したスケッチ状態です。",
+                        point: "自由度ゼロで形状が完全に決まった状態＝完全拘束。"
+                    },
+                    {
+                        question: "長方形のスケッチを直線方向に20mm移動させて直方体を作成した。この操作はどれか。",
+                        options: ["回転", "押し出し", "スイープ", "ロフト"],
+                        correctAnswer: "押し出し",
+                        explanation: "【押し出し】閉じた2次元スケッチを垂直（直線）方向に指定距離だけ移動させて立体を生成する基本操作です。",
+                        point: "直線方向にまっすぐ伸ばす＝押し出し。"
+                    },
+                    {
+                        question: "ある断面形状を中心軸の周囲に360度動かして立体を作る操作はどれか。",
+                        options: ["押し出し", "回転", "ロフト", "パターン"],
+                        correctAnswer: "回転",
+                        explanation: "【回転】断面プロファイルを指定した中心軸の周りに回転させて円筒やリングなどの回転体を作る操作です。",
+                        point: "中心軸の周りに回す＝回転。"
+                    },
+                    {
+                        question: "円形の断面を曲線状の経路に沿って移動させ、曲がったパイプ形状を作る操作はどれか。",
+                        options: ["ロフト", "スイープ", "ミラー", "シェル"],
+                        correctAnswer: "スイープ",
+                        explanation: "【スイープ】断面形状（円など）を指定した曲線軌道（パス）に沿って移動させ、曲がったパイプやレールなどを作る操作です。",
+                        point: "指定した経路（パス）に沿って動かす＝スイープ。"
+                    },
+                    {
+                        question: "円、四角形など、形の異なる複数の断面を滑らかにつないで形状を作る操作はどれか。",
+                        options: ["ロフト", "フィレット", "シェル", "パターン"],
+                        correctAnswer: "ロフト",
+                        explanation: "【ロフト】異なる平面上にある複数の断面形状（円と四角形など）を滑らかに補間してつなぎ、立体や曲面を生成する操作です。",
+                        point: "異なる複数の断面を滑らかにつなぐ＝ロフト。"
+                    },
+                    {
+                        question: "直方体の角を丸く加工する機能として適切なものはどれか。",
+                        options: ["フィレット", "シェル", "スイープ", "トリム"],
+                        correctAnswer: "フィレット",
+                        explanation: "【フィレット】立体の角や稜線に指定半径（R）の丸みを付ける機能です。",
+                        point: "角を丸くする（R付け）＝フィレット。"
+                    },
+                    {
+                        question: "直方体の角を平面状に削り落とす機能として適切なものはどれか。",
+                        options: ["フィレット", "面取り", "シェル", "ロフト"],
+                        correctAnswer: "面取り",
+                        explanation: "【面取り（チャンファ）】立体の角や稜線を斜めの平面状に削り落とす（C面取りなど）機能です。",
+                        point: "角を斜めの平面状に削り落とす＝面取り。"
+                    },
+                    {
+                        question: "ソリッドモデルの内部をくり抜き、一定の肉厚を持つケースのような形状を作成する機能はどれか。",
+                        options: ["シェル", "スイープ", "ミラー", "トリム"],
+                        correctAnswer: "シェル",
+                        explanation: "【シェル】ソリッドモデルの指定面を開口し、内部をくり抜いて均一な肉厚の薄肉構造を作成する機能です。",
+                        point: "内部をくり抜いて均一な肉厚にする＝シェル。"
+                    },
+                    {
+                        question: "同じ穴を直線上に一定間隔で10個配置したい。最も適した機能はどれか。",
+                        options: ["パターン", "シェル", "ロフト", "マスプロパティ"],
+                        correctAnswer: "パターン",
+                        explanation: "【パターン】同じフィーチャや形状を直線状（矩形パターン）や円周上に規則的な間隔・個数で複製配置する機能です。",
+                        point: "一定間隔・規則的に複数配置＝パターン。"
+                    },
+                    {
+                        question: "右側に作成した形状と左右対称になる形状を左側にも作成したい。最も適した機能はどれか。",
+                        options: ["ミラー", "スイープ", "トリム", "シェーディング"],
+                        correctAnswer: "ミラー",
+                        explanation: "【ミラー】基準平面（対称面）を鏡として、左右対称の形状を反転複製する機能です。",
+                        point: "基準面に対して対称コピー＝ミラー。"
+                    },
+                    {
+                        question: "2つのソリッドAとBを1つの立体として結合する操作は、ブーリアン演算のどれに相当するか。",
+                        options: ["和", "差", "積", "補集合"],
+                        correctAnswer: "和",
+                        explanation: "【和（Union）】2つの立体を合体させて1つの連続したソリッドにするブーリアン演算です。",
+                        point: "2つの立体を結合＝和。"
+                    },
+                    {
+                        question: "直方体から円柱部分を取り除いて穴を作った。この操作は、ブーリアン演算のどれに相当するか。",
+                        options: ["和", "差", "積", "対称"],
+                        correctAnswer: "差",
+                        explanation: "【差（Difference）】基準となる立体から別の立体と重なる部分を差し引いて削り取るブーリアン演算です。",
+                        point: "一方から他方を取り除く（削る）＝差。"
+                    },
+                    {
+                        question: "2つのソリッドが重なっている部分だけを残す操作は、ブーリアン演算のどれに相当するか。",
+                        options: ["和", "差", "積", "拘束"],
+                        correctAnswer: "積",
+                        explanation: "【積（Intersection）】2つのソリッドが空間的に重複している共通部分のみを抽出するブーリアン演算です。",
+                        point: "重なっている共通部分だけを残す＝積。"
+                    },
+                    {
+                        question: "作成したソリッドモデルの体積、表面積、重心などを確認する機能はどれか。",
+                        options: ["マスプロパティ", "シェーディング", "レンダリング", "PDM"],
+                        correctAnswer: "マスプロパティ",
+                        explanation: "【マスプロパティ】ソリッドモデルの体積・表面積・重心・慣性モーメント、および密度指定時の質量を計算・確認する機能です。",
+                        point: "体積・表面積・重心・質量＝マスプロパティ。"
+                    },
+                    {
+                        question: "複数のパーツモデルを組み合わせて製品全体を表現したモデルはどれか。",
+                        options: ["アセンブリモデル", "ワイヤーフレームモデル", "サーフェスモデル", "ボクセルモデル"],
+                        correctAnswer: "アセンブリモデル",
+                        explanation: "【アセンブリモデル】個々の部品であるパーツモデルを複数組み合わせ、拘束条件で位置決めして製品全体を構成したモデルです。",
+                        point: "複数部品を組み合わせて製品全体を表現＝アセンブリモデル。"
+                    },
+                    {
+                        question: "アセンブリモデルで、2つの部品が同じ空間を占有していないか確認する機能はどれか。",
+                        options: ["干渉チェック", "マスプロパティ", "シェル", "パターン"],
+                        correctAnswer: "干渉チェック",
+                        explanation: "【干渉チェック】アセンブリ内で複数の部品同士が重なり合ったりめり込んだりしていないかを検出する機能です。",
+                        point: "部品同士の重なり（空間の重複占有）確認＝干渉チェック。"
+                    },
+                    {
+                        question: "3次元モデルの表面に明暗を付けて、立体的に見えるよう表示する処理はどれか。",
+                        options: ["シェーディング", "ブーリアン演算", "拘束", "PDM"],
+                        correctAnswer: "シェーディング",
+                        explanation: "【シェーディング】光源と面の向きに応じて明暗（陰影）を計算し、3次元モデルを立体感豊かに描画する処理です。",
+                        point: "表面に明暗（陰影）を付けて立体表示＝シェーディング。"
+                    },
+                    {
+                        question: "次の組み合わせのうち、正しいものはどれか。",
+                        options: [
+                            "押し出し ― 複数の断面を滑らかにつなぐ",
+                            "ロフト ― 断面を経路に沿って移動させる",
+                            "スイープ ― 断面を指定された経路に沿って移動させる",
+                            "シェル ― 形状を左右対称に複製する"
+                        ],
+                        correctAnswer: "スイープ ― 断面を指定された経路に沿って移動させる",
+                        explanation: "【スイープ ― 断面を指定された経路に沿って移動させる】が正しい組み合わせです。（押し出しは直線移動、ロフトは複数断面をつなぐ、シェルは中空化です）",
+                        point: "押し出し＝直線移動 ／ ロフト＝複数断面 ／ スイープ＝経路移動 ／ シェル＝中空化。"
+                    },
+
+                    // Part 2 文章穴埋め問題（問題31〜45）
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】3次元CADで使用される代表的なモデルには、点と線を中心に表現する（　A　）モデル、面によって表面形状を表現する（　B　）モデル、内部と外部を区別できる立体として表現する（　C　）モデルがある。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "ワイヤーフレーム", acceptedAnswers: ["ワイヤーフレーム", "ワイヤーフレームモデル", "ワイヤフレーム"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "サーフェス", acceptedAnswers: ["サーフェス", "サーフェスモデル"] },
+                            { label: "C", placeholder: "Cに入る用語", correctAnswer: "ソリッド", acceptedAnswers: ["ソリッド", "ソリッドモデル"] }
+                        ],
+                        explanation: "点と線で表現するのが「ワイヤーフレームモデル」、面で表面を表現するのが「サーフェスモデル」、内部と外部を区別できる立体が「ソリッドモデル」です。",
+                        point: "A：ワイヤーフレーム（点・線）／ B：サーフェス（面）／ C：ソリッド（立体）"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】ソリッドモデルを構成する境界要素には、点に相当する（　A　）、線に相当する（　B　）、表面を構成する（　C　）がある。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "頂点", acceptedAnswers: ["頂点", "バーテックス"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "稜線", acceptedAnswers: ["稜線", "エッジ"] },
+                            { label: "C", placeholder: "Cに入る用語", correctAnswer: "面", acceptedAnswers: ["面", "フェイス"] }
+                        ],
+                        explanation: "ソリッドモデルの境界は、点に相当する「頂点（Vertex）」、線に相当する「稜線（Edge）」、表面を構成する「面（Face）」の3要素で構成されます。",
+                        point: "A：頂点 ／ B：稜線 ／ C：面"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】立体を頂点・稜線・面などの境界情報によって表現する方式を（　A　）といい、直方体や円柱などの基本立体を集合演算によって組み合わせる方式を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "B-reps", acceptedAnswers: ["B-reps", "b-reps", "BREPS", "breps", "B-rep", "境界表現"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "CSG", acceptedAnswers: ["CSG", "csg"] }
+                        ],
+                        explanation: "頂点・稜線・面の境界情報で表すのが「B-reps（境界表現）」、基本立体（プリミティブ）の集合演算で表すのが「CSG」です。",
+                        point: "A：B-reps（境界表現）／ B：CSG（基本立体の集合演算）"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】3次元CADで穴・溝・突起など、設計上の意味を持った形状要素を（　A　）という。その作成順序を記録してモデルを構築する方式を（　B　）モデリングという。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "フィーチャ", acceptedAnswers: ["フィーチャ", "フィーチャー"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "ヒストリーベース", acceptedAnswers: ["ヒストリーベース", "ヒストリー", "ヒストリーベースモデリング"] }
+                        ],
+                        explanation: "穴・溝・突起などの意味ある形状単位が「フィーチャ」、その作成履歴を記録して構築・編集する方式が「ヒストリーベース」モデリングです。",
+                        point: "A：フィーチャ ／ B：ヒストリーベース"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】寸法や角度などの値を（　A　）として設定し、その値を変更することで形状を連動して変更できる方式を（　B　）モデリングという。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "パラメータ", acceptedAnswers: ["パラメータ", "パラメーター"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "パラメトリック", acceptedAnswers: ["パラメトリック", "パラメトリックモデリング"] }
+                        ],
+                        explanation: "寸法や角度を「パラメータ」として定義し、数値変更に連動して形状を再計算・更新する方式を「パラメトリック」モデリングといいます。",
+                        point: "A：パラメータ ／ B：パラメトリック"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】スケッチに「水平」「垂直」「平行」「一致」などの条件を与えることを（　A　）という。寸法や条件によって形状が完全に決定された状態を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "拘束", acceptedAnswers: ["拘束", "幾何拘束"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "完全拘束", acceptedAnswers: ["完全拘束"] }
+                        ],
+                        explanation: "形状に幾何学的条件を与えることが「拘束」、自由度がなくなり形状が完全に確定した状態が「完全拘束」です。",
+                        point: "A：拘束 ／ B：完全拘束"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】2次元の断面形状を直線方向に移動させて立体を作る操作を（　A　）、断面を軸の周囲に回して立体を作る操作を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "押し出し", acceptedAnswers: ["押し出し", "押出し", "おしだし"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "回転", acceptedAnswers: ["回転", "かいてん"] }
+                        ],
+                        explanation: "断面を直線方向にまっすぐ伸ばす操作が「押し出し」、軸を中心に回す操作が「回転」です。",
+                        point: "A：押し出し ／ B：回転"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】断面を指定した経路に沿って移動させる操作を（　A　）、複数の異なる断面を滑らかにつないで形状を作る操作を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "スイープ", acceptedAnswers: ["スイープ", "すいーぷ"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "ロフト", acceptedAnswers: ["ロフト", "ろふと"] }
+                        ],
+                        explanation: "経路（パス）に沿って移動させる操作が「スイープ」、異なる複数断面をつなぐ操作が「ロフト」です。",
+                        point: "A：スイープ ／ B：ロフト"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】立体の角を丸くする操作を（　A　）、角を平面状に削り落とす操作を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "フィレット", acceptedAnswers: ["フィレット", "ふぃれっと"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "面取り", acceptedAnswers: ["面取り", "めんとり", "チャンファ"] }
+                        ],
+                        explanation: "角に丸みを付けるのが「フィレット」、斜めの平面状に削り落とすのが「面取り」です。",
+                        point: "A：フィレット（丸み）／ B：面取り（斜め平面）"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】ソリッドの内部をくり抜いて一定の肉厚を持たせる機能を（　A　）、同じ形状を規則的に複製する機能を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "シェル", acceptedAnswers: ["シェル", "しぇる"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "パターン", acceptedAnswers: ["パターン", "ぱたーん", "アレイ"] }
+                        ],
+                        explanation: "内部をくり抜き一定肉厚にするのが「シェル」、規則的に繰り返し配置するのが「パターン」です。",
+                        point: "A：シェル ／ B：パターン"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】基準となる面などに対して対称な形状を複製する機能を（　A　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "ミラー", acceptedAnswers: ["ミラー", "みらー"] }
+                        ],
+                        explanation: "基準平面を対称面として鏡映コピーする機能が「ミラー」です。",
+                        point: "A：ミラー（対称複製）"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】2つの立体を組み合わせるブーリアン演算では、2つを結合する操作を（　A　）、一方から他方を取り除く操作を（　B　）、重なっている部分だけを残す操作を（　C　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "和", acceptedAnswers: ["和", "わ"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "差", acceptedAnswers: ["差", "さ"] },
+                            { label: "C", placeholder: "Cに入る用語", correctAnswer: "積", acceptedAnswers: ["積", "せき"] }
+                        ],
+                        explanation: "ブーリアン演算の3種類は、結合する「和」、削り取る「差」、共通部分を残す「積」です。",
+                        point: "A：和（結合）／ B：差（除去）／ C：積（共通部分）"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】3次元モデルから体積、表面積、重心などの物理的特性を求める機能を（　A　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "マスプロパティ", acceptedAnswers: ["マスプロパティ", "ますぷろぱてぃ"] }
+                        ],
+                        explanation: "ソリッドモデルの体積・表面積・重心・質量・慣性モーメントを算出する機能が「マスプロパティ」です。",
+                        point: "A：マスプロパティ"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】1つの部品を表現するモデルを（　A　）モデルといい、複数の部品を組み合わせて製品全体を表現するモデルを（　B　）モデルという。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "パーツ", acceptedAnswers: ["パーツ", "パーツモデル"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "アセンブリ", acceptedAnswers: ["アセンブリ", "アセンブリモデル"] }
+                        ],
+                        explanation: "単一部品が「パーツモデル」、複数部品を組み合わせた組立体が「アセンブリモデル」です。",
+                        point: "A：パーツ ／ B：アセンブリ"
+                    },
+                    {
+                        type: "multi_fill",
+                        question: "【Part 2 文章穴埋め】アセンブリした部品同士が同じ空間を占有していないか確認する機能を（　A　）という。また、モデル表面に明暗を付けて立体的に表示する処理を（　B　）という。",
+                        blanks: [
+                            { label: "A", placeholder: "Aに入る用語", correctAnswer: "干渉チェック", acceptedAnswers: ["干渉チェック", "かんしょうちぇっく", "干渉検出"] },
+                            { label: "B", placeholder: "Bに入る用語", correctAnswer: "シェーディング", acceptedAnswers: ["シェーディング", "しぇーでぃんぐ"] }
+                        ],
+                        explanation: "部品の重なりを検出するのが「干渉チェック」、表面に明暗を付けて立体表示するのが「シェーディング」です。",
+                        point: "A：干渉チェック ／ B：シェーディング"
+                    }
+                ]
+            },
+            {
+                id: "diagram_2kyu_40",
+                title: "図問題集（全40問・10図解）",
+                description: "3次元CAD利用技術者試験2級の「モデリング手順の空欄補充問題」形式。ご提示の2図解（カップ形状・ガイドブロック）に加え、ロフト・ドラフト・円周パターン・ブーリアン演算・パイプ継手など計10テーマの図解付き全40問を完全収録。",
+                questions: (function() {
+                    // 10種類のSVG設問図定義
+                    const diagrams = {
+                        fig1: `<svg viewBox="0 0 760 560" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="552" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="45" y="38" font-size="15" font-weight="bold" fill="#0f172a">【初期スケッチ】</text>
+                            <text x="35" y="68" font-size="12" fill="#1e293b">プロファイル1</text>
+                            <text x="38" y="84" font-size="12" fill="#1e293b">(中心軸)</text>
+                            <line x1="115" y1="55" x2="115" y2="175" stroke="#0f172a" stroke-width="2" stroke-dasharray="10,4,2,4"/>
+                            <line x1="115" y1="65" x2="180" y2="65" stroke="#0f172a" stroke-width="2"/>
+                            <line x1="180" y1="65" x2="168" y2="160" stroke="#0f172a" stroke-width="2"/>
+                            <line x1="168" y1="160" x2="115" y2="160" stroke="#0f172a" stroke-width="2"/>
+                            <text x="188" y="75" font-size="12" fill="#1e293b">プロファイル2</text>
+                            <text x="190" y="91" font-size="12" fill="#1e293b">(断面線)</text>
+                            <path d="M 178 82 C 232 82, 232 145, 170 145" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+                            <text x="218" y="114" font-size="12" fill="#1e293b">プロファイル3</text>
+                            <text x="220" y="130" font-size="12" fill="#1e293b">(曲線)</text>
+                            <path d="M 135 182 L 135 215" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+                            <!-- Step 1 -->
+                            <g transform="translate(65, 222)">
+                                <path d="M 10 15 L 130 15 L 112 105 L 28 105 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="15" rx="60" ry="11" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <path d="M 28 105 A 42 8 0 0 0 112 105" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                            <rect x="42" y="340" width="185" height="54" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="50" y="358" font-size="12" fill="#0f172a">①プロファイル1を軸に</text>
+                            <text x="50" y="374" font-size="12" fill="#0f172a">プロファイル2を<tspan font-weight="bold" fill="#b91c1c">（問1）</tspan></text>
+                            <text x="50" y="390" font-size="12" fill="#0f172a">してソリッド1を作成。</text>
+                            <path d="M 135 400 L 135 426" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 2 -->
+                            <g transform="translate(65, 430)">
+                                <path d="M 10 15 L 130 15 L 112 95 L 28 95 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="15" rx="60" ry="11" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="15" rx="50" ry="8" fill="#e4e4e7" stroke="#18181b" stroke-width="1.5"/>
+                                <path d="M 28 95 A 42 8 0 0 0 112 95" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                            <rect x="35" y="502" width="205" height="42" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="45" y="520" font-size="12" fill="#0f172a">②ソリッド1の上面を指定し</text>
+                            <text x="45" y="536" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問2）</tspan>を行い中空にする。</text>
+                            <path d="M 255 510 L 385 510" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 3 -->
+                            <g transform="translate(425, 415)">
+                                <path d="M 125 25 C 185 25, 185 88, 114 88 L 112 78 C 170 78, 170 35, 123 35 Z" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <path d="M 10 15 L 130 15 L 112 95 L 28 95 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="15" rx="60" ry="11" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="15" rx="50" ry="8" fill="#e4e4e7" stroke="#18181b" stroke-width="1.5"/>
+                                <path d="M 28 95 A 42 8 0 0 0 112 95" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                            <rect x="405" y="495" width="235" height="52" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="415" y="512" font-size="12" fill="#0f172a">③プロファイル3に沿って円を</text>
+                            <text x="415" y="527" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問3）</tspan>し取っ手を作成。</text>
+                            <text x="415" y="542" font-size="12" fill="#0f172a">本体と和のブーリアン演算を行う。</text>
+                            <path d="M 515 405 L 515 355" stroke="#64748b" stroke-width="3"/>
+                            <rect x="415" y="315" width="195" height="30" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="428" y="335" font-size="12" fill="#0f172a">④最後に<tspan font-weight="bold" fill="#b91c1c">（問4）</tspan>を行う。</text>
+                            <path d="M 515 305 L 515 255" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 4 Final Model B -->
+                            <text x="445" y="45" font-size="16" font-weight="bold" fill="#0f172a">モデル B（完成）</text>
+                            <g transform="translate(425, 85)">
+                                <path d="M 124 26 C 186 26, 186 92, 113 92 L 111 81 C 171 81, 171 36, 122 36 Z" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <path d="M 10 15 Q 10 10, 18 10 L 122 10 Q 130 10, 130 15 L 112 98 Q 110 105, 102 105 L 38 105 Q 30 105, 28 98 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="14" rx="59" ry="11" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="70" cy="14" rx="49" ry="8" fill="#e4e4e7" stroke="#18181b" stroke-width="1.5"/>
+                                <path d="M 29 98 A 41 8 0 0 0 111 98" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                            <text x="355" y="78" font-size="12" fill="#0f172a">稜線1(口元)</text>
+                            <line x1="422" y1="75" x2="465" y2="92" stroke="#0f172a" stroke-width="1.5"/>
+                            <text x="615" y="88" font-size="12" fill="#0f172a">稜線2(取っ手根元)</text>
+                            <line x1="610" y1="88" x2="555" y2="112" stroke="#0f172a" stroke-width="1.5"/>
+                            <text x="580" y="215" font-size="12" fill="#0f172a">稜線3(底面外周)</text>
+                            <line x1="575" y1="210" x2="532" y2="195" stroke="#0f172a" stroke-width="1.5"/>
+                        </svg>`,
+                        fig2: `<svg viewBox="0 0 760 560" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="552" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <!-- Step 1 -->
+                            <rect x="42" y="20" width="215" height="44" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="52" y="38" font-size="12" fill="#0f172a">①プロファイル1（L字型）を</text>
+                            <text x="52" y="54" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問5）</tspan>してソリッド1を作成。</text>
+                            <g transform="translate(65, 78)">
+                                <polygon points="0,35 35,15 80,15 45,35" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,35 80,15 80,115 45,135" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,115 80,95 165,95 130,115" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="130,115 165,95 165,120 130,140" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="0,35 45,35 45,115 130,115 130,140 0,140" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                            <path d="M 145 235 L 145 290" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 2 -->
+                            <g transform="translate(65, 305)">
+                                <polygon points="0,35 35,15 80,15 45,35" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,35 80,15 80,115 45,135" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,115 80,95 165,95 130,115" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="130,115 165,95 165,120 130,140" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="0,35 45,35 45,115 130,115 130,140 0,140" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <!-- Rib -->
+                                <polygon points="62,48 62,105 118,105" fill="#52525b" stroke="#18181b" stroke-width="1.8"/>
+                            </g>
+                            <rect x="40" y="485" width="225" height="44" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="50" y="503" font-size="12" fill="#0f172a">②中央にプロファイル2（斜線）を描き</text>
+                            <text x="50" y="519" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問6）</tspan>機能で補強板を作成。</text>
+                            <path d="M 285 415 L 385 415" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 3 -->
+                            <g transform="translate(410, 305)">
+                                <polygon points="0,35 35,15 80,15 45,35" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,35 80,15 80,115 45,135" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,115 80,95 165,95 130,115" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="130,115 165,95 165,120 130,140" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="0,35 45,35 45,115 130,115 130,140 0,140" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="62,48 62,105 118,105" fill="#52525b" stroke="#18181b" stroke-width="1.8"/>
+                                <!-- Hole -->
+                                <ellipse cx="122" cy="105" rx="13" ry="6" fill="#3f3f46" stroke="#18181b" stroke-width="1.8"/>
+                            </g>
+                            <rect x="405" y="485" width="235" height="44" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="415" y="503" font-size="12" fill="#0f172a">③円柱ソリッドを作成し、本体から</text>
+                            <text x="415" y="519" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問7）</tspan>のブーリアン演算で穴をあける。</text>
+                            <path d="M 495 295 L 495 245" stroke="#64748b" stroke-width="3"/>
+                            <rect x="405" y="195" width="195" height="42" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+                            <text x="415" y="213" font-size="12" fill="#0f172a">④背面を対称面として全体を</text>
+                            <text x="415" y="229" font-size="12" fill="#0f172a"><tspan font-weight="bold" fill="#b91c1c">（問8）</tspan>してモデルCを完成させる。</text>
+                            <!-- Step 4 Model C -->
+                            <text x="425" y="45" font-size="16" font-weight="bold" fill="#0f172a">モデル C（左右対称の完成形）</text>
+                            <g transform="translate(425, 75)">
+                                <rect x="45" y="0" width="32" height="65" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="0" y="65" width="122" height="22" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="45,20 45,65 12,65" fill="#52525b" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="77,20 77,65 110,65" fill="#52525b" stroke="#18181b" stroke-width="2"/>
+                            </g>
+                        </svg>`,
+                        fig3: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題3】異形ダクト（トランジション管）のモデリング手順</text>
+                            <!-- Step 1 -->
+                            <g transform="translate(45, 70)">
+                                <rect x="10" y="95" width="100" height="55" fill="none" stroke="#1d4ed8" stroke-width="2"/>
+                                <ellipse cx="60" cy="25" rx="32" ry="14" fill="none" stroke="#1d4ed8" stroke-width="2"/>
+                                <line x1="60" y1="25" x2="60" y2="122" stroke="#64748b" stroke-dasharray="4,4"/>
+                                <text x="0" y="170" font-size="12">①平行な2平面に円と四角形を描き</text>
+                                <text x="0" y="186" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問9）</tspan>機能で滑らかにつなぐ。</text>
+                            </g>
+                            <path d="M 215 140 L 265 140" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 2 -->
+                            <g transform="translate(285, 70)">
+                                <polygon points="15,95 105,95 88,28 32,28" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="60" cy="28" rx="28" ry="10" fill="#e4e4e7" stroke="#18181b" stroke-width="2"/>
+                                <text x="-10" y="170" font-size="12">②上下の端面を指定して</text>
+                                <text x="-10" y="186" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問10）</tspan>を行い中空ダクトにする。</text>
+                            </g>
+                            <path d="M 455 140 L 505 140" stroke="#64748b" stroke-width="3"/>
+                            <!-- Step 3 & 4 -->
+                            <g transform="translate(525, 65)">
+                                <rect x="0" y="95" width="130" height="22" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="20,95 110,95 93,28 37,28" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="65" cy="28" rx="28" ry="10" fill="#e4e4e7" stroke="#18181b" stroke-width="2"/>
+                                <circle cx="15" cy="106" r="4" fill="#18181b"/>
+                                <circle cx="115" cy="106" r="4" fill="#18181b"/>
+                                <text x="-25" y="175" font-size="12">③底面にフランジを<tspan font-weight="bold" fill="#b91c1c">（問11）</tspan>で追加し、</text>
+                                <text x="-25" y="191" font-size="12">④四隅のボルト穴を<tspan font-weight="bold" fill="#b91c1c">（問12）</tspan>で配置。</text>
+                            </g>
+                            <text x="45" y="340" font-size="13" fill="#334155">※異なる断面形状（円と長方形）を連続的に変化させて立体化する操作と、規則的な穴配置を問う問題です。</text>
+                        </svg>`,
+                        fig4: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題4】樹脂ケース（抜き勾配付き筐体）のモデリング手順</text>
+                            <g transform="translate(45, 75)">
+                                <rect x="15" y="25" width="110" height="85" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="155" font-size="12">①長方形スケッチを押し出し、</text>
+                                <text x="0" y="171" font-size="12">側面へ金型離型用の<tspan font-weight="bold" fill="#b91c1c">（問13）</tspan>を付与。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 75)">
+                                <polygon points="10,25 120,25 110,110 20,110" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <polygon points="22,35 108,35 100,100 30,100" fill="#e4e4e7" stroke="#18181b" stroke-width="1.5"/>
+                                <text x="-10" y="155" font-size="12">②上面を開口面として指定し、</text>
+                                <text x="-10" y="171" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問14）</tspan>機能で均一肉厚にする。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 75)">
+                                <polygon points="10,25 120,25 110,110 20,110" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <circle cx="45" cy="65" r="10" fill="#71717a" stroke="#18181b" stroke-width="1.5"/>
+                                <circle cx="85" cy="65" r="10" fill="#71717a" stroke="#18181b" stroke-width="1.5"/>
+                                <text x="-15" y="155" font-size="12">③底面にねじ止め用<tspan font-weight="bold" fill="#b91c1c">（問15）</tspan>を立て、</text>
+                                <text x="-15" y="171" font-size="12">④外周角部に丸み<tspan font-weight="bold" fill="#b91c1c">（問16）</tspan>を付ける。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※射出成形部品で必須となる「抜き勾配」や、円筒状の突起（ボス）の作成手順を確認します。</text>
+                        </svg>`,
+                        fig5: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題5】フランジ継手（円形ボルト穴）のモデリング手順</text>
+                            <g transform="translate(45, 70)">
+                                <line x1="65" y1="10" x2="65" y2="125" stroke="#0f172a" stroke-dasharray="8,3,2,3" stroke-width="1.8"/>
+                                <polygon points="65,20 95,20 95,85 125,85 125,110 65,110" fill="#cbd5e1" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="155" font-size="12">①T字断面を軸周りに<tspan font-weight="bold" fill="#b91c1c">（問17）</tspan>して</text>
+                                <text x="0" y="171" font-size="12">円筒フランジのベースを作成する。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 70)">
+                                <ellipse cx="65" cy="95" rx="60" ry="20" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="35" y="30" width="60" height="65" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="65" cy="30" rx="30" ry="10" fill="#e4e4e7" stroke="#18181b" stroke-width="2"/>
+                                <circle cx="22" cy="95" r="5" fill="#18181b"/>
+                                <text x="-10" y="155" font-size="12">②基準穴を1つあけた後、中心軸基準で</text>
+                                <text x="-10" y="171" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問18）</tspan>を行い6等分配置する。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 70)">
+                                <ellipse cx="65" cy="95" rx="60" ry="20" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="35" y="30" width="60" height="65" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="65" cy="30" rx="30" ry="10" fill="#e4e4e7" stroke="#18181b" stroke-width="2"/>
+                                <circle cx="22" cy="95" r="4" fill="#18181b"/><circle cx="108" cy="95" r="4" fill="#18181b"/>
+                                <circle cx="42" cy="83" r="4" fill="#18181b"/><circle cx="88" cy="83" r="4" fill="#18181b"/>
+                                <text x="-15" y="155" font-size="12">③上端エッジにC面を付ける<tspan font-weight="bold" fill="#b91c1c">（問19）</tspan>、</text>
+                                <text x="-15" y="171" font-size="12">④根元角部に<tspan font-weight="bold" fill="#b91c1c">（問20）</tspan>を付加する。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※円周上の等間隔配置と、角を斜めに削る「面取り」・丸める「フィレット」の使い分けを問います。</text>
+                        </svg>`,
+                        fig6: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題6】曲面カバー（サーフェスからソリッド化）の手順</text>
+                            <g transform="translate(45, 75)">
+                                <path d="M 10 90 Q 65 15, 120 90" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+                                <path d="M 30 110 Q 85 35, 140 110" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+                                <line x1="10" y1="90" x2="30" y2="110" stroke="#64748b"/>
+                                <line x1="120" y1="90" x2="140" y2="110" stroke="#64748b"/>
+                                <text x="0" y="155" font-size="12">①ガイド曲線に沿って自由曲面となる</text>
+                                <text x="0" y="171" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問21）</tspan>モデルを作成する。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 75)">
+                                <path d="M 10 85 Q 65 15, 120 85 L 120 100 Q 65 30, 10 100 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <text x="-10" y="155" font-size="12">②作成した曲面に一定の厚みを与える</text>
+                                <text x="-10" y="171" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問22）</tspan>機能でソリッド化する。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 75)">
+                                <path d="M 10 85 Q 65 15, 120 85 L 120 100 Q 65 30, 10 100 Z" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <ellipse cx="65" cy="52" rx="16" ry="9" fill="#ffffff" stroke="#18181b" stroke-width="2"/>
+                                <text x="-15" y="155" font-size="12">③不要な開口部を<tspan font-weight="bold" fill="#b91c1c">（問23）</tspan>で切り取り、</text>
+                                <text x="-15" y="171" font-size="12">④複数面を<tspan font-weight="bold" fill="#b91c1c">（問24）</tspan>して隙間を閉じる。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※意匠曲面設計で用いられるサーフェス編集（厚み付け・トリム・縫合/ステッチ）の重要用語です。</text>
+                        </svg>`,
+                        fig7: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題7】集合演算（CSGブーリアン演算）による部品生成</text>
+                            <g transform="translate(45, 75)">
+                                <rect x="15" y="25" width="75" height="75" fill="#94a3b8" stroke="#18181b" stroke-width="2"/>
+                                <circle cx="80" cy="62" r="35" fill="#cbd5e1" fill-opacity="0.8" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="150" font-size="12">①直方体Aと円柱Bを1つの立体に</text>
+                                <text x="0" y="166" font-size="12">合体させる演算は<tspan font-weight="bold" fill="#b91c1c">（問25）</tspan>。</text>
+                            </g>
+                            <g transform="translate(285, 75)">
+                                <path d="M 15 25 L 90 25 L 90 30 A 35 35 0 0 0 90 95 L 90 100 L 15 100 Z" fill="#94a3b8" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="150" font-size="12">②直方体Aから円柱Bの領域を</text>
+                                <text x="0" y="166" font-size="12">削り取る演算は<tspan font-weight="bold" fill="#b91c1c">（問26）</tspan>。</text>
+                            </g>
+                            <g transform="translate(525, 75)">
+                                <path d="M 90 30 A 35 35 0 0 0 90 95 Z" fill="#64748b" stroke="#18181b" stroke-width="2"/>
+                                <text x="-10" y="150" font-size="12">③AとBが重なり合う共通部分だけを</text>
+                                <text x="-10" y="166" font-size="12">残す演算は<tspan font-weight="bold" fill="#b91c1c">（問27）</tspan>、この総称は<tspan font-weight="bold" fill="#b91c1c">（問28）</tspan>。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※ソリッドモデリングの根幹である集合演算（和・差・積＝ブーリアン演算）の視覚的理解を問います。</text>
+                        </svg>`,
+                        fig8: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題8】3次元空間パイプ（ヘリカル・配管）のモデリング手順</text>
+                            <g transform="translate(45, 75)">
+                                <path d="M 15 95 C 15 35, 115 85, 115 20" fill="none" stroke="#1d4ed8" stroke-width="3"/>
+                                <circle cx="15" cy="95" r="10" fill="none" stroke="#b91c1c" stroke-width="2"/>
+                                <text x="0" y="150" font-size="12">①軌道（パス）に沿って円断面を</text>
+                                <text x="0" y="166" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問29）</tspan>して丸棒形状を作る。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 75)">
+                                <path d="M 15 95 C 15 35, 115 85, 115 20" fill="none" stroke="#71717a" stroke-width="16" stroke-linecap="round"/>
+                                <path d="M 15 95 C 15 35, 115 85, 115 20" fill="none" stroke="#e4e4e7" stroke-width="8" stroke-linecap="round"/>
+                                <text x="-10" y="150" font-size="12">②両端面を開口面として指定し、</text>
+                                <text x="-10" y="166" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問30）</tspan>で中空パイプ化する。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 75)">
+                                <path d="M 25 25 C 75 25, 75 95, 25 95" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+                                <text x="-15" y="150" font-size="12">③円筒面上に文字や溝の曲線を</text>
+                                <text x="-15" y="166" font-size="12">写し取る<tspan font-weight="bold" fill="#b91c1c">（問31）</tspan>と螺旋<tspan font-weight="bold" fill="#b91c1c">（問32）</tspan>。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※配管のスイープ中空化や、曲面への曲線投影（プロジェクション）、ねじ山・ばねのヘリカルスイープを扱います。</text>
+                        </svg>`,
+                        fig9: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題9】階段状段付きシャフトのモデリングと干渉検証</text>
+                            <g transform="translate(45, 75)">
+                                <line x1="10" y1="65" x2="140" y2="65" stroke="#0f172a" stroke-dasharray="8,3,2,3" stroke-width="1.8"/>
+                                <polygon points="20,65 20,40 55,40 55,22 100,22 100,45 130,45 130,65" fill="#cbd5e1" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="145" font-size="12">①段付き断面を軸周りに<tspan font-weight="bold" fill="#b91c1c">（問33）</tspan>して</text>
+                                <text x="0" y="161" font-size="12">一発で段付き丸軸を生成する。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 75)">
+                                <rect x="15" y="40" width="35" height="50" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="50" y="22" width="45" height="86" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="95" y="45" width="30" height="40" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="60" y="22" width="25" height="10" fill="#3f3f46"/>
+                                <text x="-10" y="145" font-size="12">②基準面をオフセット作成してキー溝を</text>
+                                <text x="-10" y="161" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問34）</tspan>カットで削り出す。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 75)">
+                                <rect x="25" y="22" width="80" height="86" fill="none" stroke="#18181b" stroke-width="2"/>
+                                <rect x="45" y="15" width="40" height="100" fill="#94a3b8" fill-opacity="0.6" stroke="#b91c1c" stroke-width="2"/>
+                                <text x="-15" y="145" font-size="12">③軸受と組み合わせて<tspan font-weight="bold" fill="#b91c1c">（問35）</tspan>し、</text>
+                                <text x="-15" y="161" font-size="12">④重なりがないか<tspan font-weight="bold" fill="#b91c1c">（問36）</tspan>を行う。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※回転体の効率的なモデリング手順と、アセンブリ拘束・干渉チェックによる検証フローを問います。</text>
+                        </svg>`,
+                        fig10: `<svg viewBox="0 0 760 440" class="w-full max-w-2xl mx-auto h-auto text-slate-900" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="4" width="752" height="432" fill="#ffffff" stroke="#1e293b" stroke-width="2"/>
+                            <text x="35" y="36" font-size="15" font-weight="bold" fill="#0f172a">【練習問題10】フィレットの適用順序とパラメトリック履歴編集</text>
+                            <g transform="translate(45, 75)">
+                                <rect x="15" y="35" width="100" height="65" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="45" y="10" width="40" height="25" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <text x="0" y="145" font-size="12">①ベースとボスが交わる根元の稜線に</text>
+                                <text x="0" y="161" font-size="12">先に<tspan font-weight="bold" fill="#b91c1c">（問37）</tspan>をかけるのが定石。</text>
+                            </g>
+                            <path d="M 225 130 L 275 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(295, 75)">
+                                <rect x="15" y="35" width="100" height="65" rx="8" fill="#a1a1aa" stroke="#18181b" stroke-width="2"/>
+                                <rect x="45" y="10" width="40" height="25" rx="4" fill="#71717a" stroke="#18181b" stroke-width="2"/>
+                                <text x="-10" y="145" font-size="12">②各フィーチャの操作順序を管理する</text>
+                                <text x="-10" y="161" font-size="12">設計木を<tspan font-weight="bold" fill="#b91c1c">（問38）</tspan>ツリーと呼ぶ。</text>
+                            </g>
+                            <path d="M 465 130 L 515 130" stroke="#64748b" stroke-width="3"/>
+                            <g transform="translate(535, 75)">
+                                <rect x="20" y="20" width="90" height="80" fill="#e4e4e7" stroke="#18181b" stroke-width="2"/>
+                                <text x="32" y="55" font-size="11" fill="#0f172a">R = 5 → 8mm</text>
+                                <text x="32" y="75" font-size="11" fill="#1d4ed8">自動再計算</text>
+                                <text x="-15" y="145" font-size="12">③寸法値を変えると形状が連動する</text>
+                                <text x="-15" y="161" font-size="12"><tspan font-weight="bold" fill="#b91c1c">（問39）</tspan>機能と<tspan font-weight="bold" fill="#b91c1c">（問40）</tspan>の考慮。</text>
+                            </g>
+                            <text x="45" y="335" font-size="13" fill="#334155">※フィレットの順序によるエラー回避、フィーチャ履歴（ヒストリー）、親子関係の理解を問う総仕上げ問題です。</text>
+                        </svg>`
+                    };
+
+                    return [
+                        // 【練習問題1】容器（カップ形状）のモデリング手順（問1〜4）
+                        {
+                            diagram: diagrams.fig1,
+                            question: "【練習問題1：容器（カップ形状）】設問図の ①「プロファイル1を軸にプロファイル2を（ 問1 ）してソリッド1を作成。」の空欄（問1）に当てはまる最も適切な語句はどれか。",
+                            options: ["押し出し", "回転", "ロフト", "スイープ"],
+                            correctAnswer: "回転",
+                            explanation: "【正解：回転】中心軸（プロファイル1）の周りに断面線（プロファイル2）を360度回転させて円錐台状のソリッド1を作成します。（押し出しは直線移動、ロフトは複数断面補間、スイープは経路移動です）",
+                            point: "軸の周りに断面を回して立体を作る＝回転。"
+                        },
+                        {
+                            diagram: diagrams.fig1,
+                            question: "【練習問題1：容器（カップ形状）】設問図の ②「ソリッド1の上面を指定し（ 問2 ）を行い中空にする。」の空欄（問2）に当てはまる最も適切な語句はどれか。",
+                            options: ["シェル化", "オフセット", "アントリム", "フィレット"],
+                            correctAnswer: "シェル化",
+                            explanation: "【正解：シェル化】上面を削除面（開口面）として指定し、側面と底面に一定の肉厚を残して内部をくり抜く操作は「シェル化（シェル）」です。",
+                            point: "開口面を指定して中身をくり抜き均一肉厚にする＝シェル化。"
+                        },
+                        {
+                            diagram: diagrams.fig1,
+                            question: "【練習問題1：容器（カップ形状）】設問図の ③「プロファイル3に沿って円を（ 問3 ）し取っ手を作成。本体と和のブーリアン演算を行う。」の空欄（問3）に当てはまる最も適切な語句はどれか。",
+                            options: ["回転", "投影", "スイープ", "ロフト"],
+                            correctAnswer: "スイープ",
+                            explanation: "【正解：スイープ】ガイド曲線（プロファイル3）に沿って円などの断面を移動させ、パイプ状の取っ手立体を作る操作は「スイープ」です。",
+                            point: "ガイド曲線（パス）に沿って断面を動かす＝スイープ。"
+                        },
+                        {
+                            diagram: diagrams.fig1,
+                            question: "【練習問題1：容器（カップ形状）】設問図の ④「最後に（ 問4 ）を行う。」の空欄（問4）に当てはまる最も適切なフィレットの適用手順はどれか。",
+                            options: [
+                                "稜線2にフィレットをかけた後、稜線1と3にフィレットをかける",
+                                "稜線1と3にフィレットをかけた後、稜線2にフィレットをかける",
+                                "稜線1・2・3のすべてに面取りを行った後、フィレットをかける",
+                                "稜線1のみにフィレットをかけ、稜線2と3は省略する"
+                            ],
+                            correctAnswer: "稜線2にフィレットをかけた後、稜線1と3にフィレットをかける",
+                            explanation: "【正解：稜線2にフィレットをかけた後、稜線1と3にフィレットをかける】本体の口元（稜線1）や底面（稜線3）の角を先に丸めると、取っ手との接合部（稜線2）の形状が複雑になりフィレットが失敗しやすくなります。接合部のフィレットを先に処理するのがモデリングの定石です。",
+                            point: "フィレットは「接合部（根元）を先 → 外周や端部を後」が基本。"
+                        },
+
+                        // 【練習問題2】ガイドブロックのモデリング手順（問5〜8）
+                        {
+                            diagram: diagrams.fig2,
+                            question: "【練習問題2：ガイドブロック】設問図の ①「プロファイル1（L字型）を（ 問5 ）してソリッド1を作成。」の空欄（問5）に当てはまる最も適切な語句はどれか。",
+                            options: ["押し出し", "スイープ", "回転", "シェル"],
+                            correctAnswer: "押し出し",
+                            explanation: "【正解：押し出し】2次元のL字型プロファイルを指定した厚み分だけ直線方向に伸ばす基本操作は「押し出し」です。",
+                            point: "2次元断面を直線方向にまっすぐ伸ばす＝押し出し。"
+                        },
+                        {
+                            diagram: diagrams.fig2,
+                            question: "【練習問題2：ガイドブロック】設問図の ②「中央にプロファイル2（斜線）を描き（ 問6 ）機能で補強板を作成。」の空欄（問6）に当てはまる最も適切な語句はどれか。",
+                            options: ["シェル", "リブ", "ドラフト", "ロフト"],
+                            correctAnswer: "リブ",
+                            explanation: "【正解：リブ】2つの壁面をつなぐように三角形などの補強板を作成する専用フィーチャーを「リブ」と呼びます。（ドラフトは抜き勾配、シェルは中空化です）",
+                            point: "壁やボスをつなぐ補強板＝リブ。"
+                        },
+                        {
+                            diagram: diagrams.fig2,
+                            question: "【練習問題2：ガイドブロック】設問図の ③「円柱ソリッドを作成し、本体から（ 問7 ）のブーリアン演算で穴をあける。」の空欄（問7）に当てはまる最も適切な語句はどれか。",
+                            options: ["和", "積", "差", "反転"],
+                            correctAnswer: "差",
+                            explanation: "【正解：差】元のソリッドから別のソリッド（円柱）の体積を差し引いて穴や窪みを作るブーリアン演算は「差（Difference）」です。",
+                            point: "削り取る・穴をあける＝差のブーリアン演算。"
+                        },
+                        {
+                            diagram: diagrams.fig2,
+                            question: "【練習問題2：ガイドブロック】設問図の ④「背面を対称面として全体を（ 問8 ）してモデルCを完成させる。」の空欄（問8）に当てはまる最も適切な語句はどれか。",
+                            options: ["アレイ（パターン）", "ミラー", "スケール", "スイープ"],
+                            correctAnswer: "ミラー",
+                            explanation: "【正解：ミラー】指定した平面（対称面）を基準に、左右対称の形状を反転コピーする操作は「ミラー」です。",
+                            point: "基準面を鏡にして対称形状を作る＝ミラー。"
+                        },
+
+                        // 【練習問題3】異形ダクトのモデリング手順（問9〜12）
+                        {
+                            diagram: diagrams.fig3,
+                            question: "【練習問題3：異形ダクト】設問図の ①「平行な2平面に円と四角形を描き（ 問9 ）機能で滑らかにつなぐ。」の空欄（問9）に当てはまる最も適切な語句はどれか。",
+                            options: ["ロフト", "スイープ", "回転", "シェル"],
+                            correctAnswer: "ロフト",
+                            explanation: "【正解：ロフト】異なる形状・サイズの複数断面（円と長方形など）を滑らかに補間してつなぎ立体化する機能は「ロフト」です。",
+                            point: "異なる複数の断面を滑らかにつなぐ＝ロフト。"
+                        },
+                        {
+                            diagram: diagrams.fig3,
+                            question: "【練習問題3：異形ダクト】設問図の ②「上下の端面を指定して（ 問10 ）を行い中空ダクトにする。」の空欄（問10）に当てはまる最も適切な語句はどれか。",
+                            options: ["フィレット", "シェル", "リブ", "トリム"],
+                            correctAnswer: "シェル",
+                            explanation: "【正解：シェル】上下2つの端面を開口面として指定してシェルを実行することで、両端が貫通した一定肉厚の中空ダクトを作成できます。",
+                            point: "貫通させる場合は、両端面を開口面にしてシェル。"
+                        },
+                        {
+                            diagram: diagrams.fig3,
+                            question: "【練習問題3：異形ダクト】設問図の ③「底面にフランジを（ 問11 ）で追加する。」の空欄（問11）に当てはまる最も適切な語句はどれか。",
+                            options: ["押し出し", "ドラフト", "オフセット", "面取り"],
+                            correctAnswer: "押し出し",
+                            explanation: "【正解：押し出し】底面にフランジ外形の2次元スケッチを描き、フランジ板厚分だけ直線方向に「押し出し」て本体と結合します。",
+                            point: "断面スケッチを板厚分伸ばす＝押し出し。"
+                        },
+                        {
+                            diagram: diagrams.fig3,
+                            question: "【練習問題3：異形ダクト】設問図の ④「四隅のボルト穴を（ 問12 ）で規則的に配置する。」の空欄（問12）に当てはまる最も適切な語句はどれか。",
+                            options: ["パターン（アレイ）", "ロフト", "スイープ", "シェル"],
+                            correctAnswer: "パターン（アレイ）",
+                            explanation: "【正解：パターン（アレイ）】1つの穴フィーチャを縦横のピッチと個数を指定して規則的に複製配置する機能は「パターン（矩形パターン/アレイ）」です。",
+                            point: "規則的な繰り返し配置＝パターン（アレイ）。"
+                        },
+
+                        // 【練習問題4】樹脂ケースのモデリング手順（問13〜16）
+                        {
+                            diagram: diagrams.fig4,
+                            question: "【練習問題4：樹脂ケース】設問図の ①「長方形スケッチを押し出し、側面へ金型離型用の（ 問13 ）を付与。」の空欄（問13）に当てはまる最も適切な語句はどれか。",
+                            options: ["ドラフト（抜き勾配）", "リブ", "スイープ", "トリム"],
+                            correctAnswer: "ドラフト（抜き勾配）",
+                            explanation: "【正解：ドラフト（抜き勾配）】射出成形品や鋳造品を金型からスムーズに取り出すために、側面にわずかな傾斜角度を付ける機能は「ドラフト（抜き勾配）」です。",
+                            point: "金型から抜きやすくする傾斜＝ドラフト（抜き勾配）。"
+                        },
+                        {
+                            diagram: diagrams.fig4,
+                            question: "【練習問題4：樹脂ケース】設問図の ②「上面を開口面として指定し、（ 問14 ）機能で均一肉厚にする。」の空欄（問14）に当てはまる最も適切な語句はどれか。",
+                            options: ["シェル", "ミラー", "パターン", "ロフト"],
+                            correctAnswer: "シェル",
+                            explanation: "【正解：シェル】抜き勾配を付けた後にシェル化することで、外側だけでなく内壁にも均一な肉厚の勾配が付いた薄肉ケースになります。",
+                            point: "均一な肉厚の薄肉ケース化＝シェル。"
+                        },
+                        {
+                            diagram: diagrams.fig4,
+                            question: "【練習問題4：樹脂ケース】設問図の ③「底面にねじ止め用の円筒状突起である（ 問15 ）を立てる。」の空欄（問15）に当てはまる最も適切な語句はどれか。",
+                            options: ["ボス", "フィレット", "面取り", "チャムファ"],
+                            correctAnswer: "ボス",
+                            explanation: "【正解：ボス】筐体の内底面などにねじ止めや位置決めのために設ける円筒状の突起フィーチャを「ボス」と呼びます。",
+                            point: "ねじ止め・位置決め用の円筒突起＝ボス。"
+                        },
+                        {
+                            diagram: diagrams.fig4,
+                            question: "【練習問題4：樹脂ケース】設問図の ④「外周角部に丸みである（ 問16 ）を付ける。」の空欄（問16）に当てはまる最も適切な語句はどれか。",
+                            options: ["フィレット", "シェル", "スイープ", "リブ"],
+                            correctAnswer: "フィレット",
+                            explanation: "【正解：フィレット】角や稜線に指定半径の丸み（R）を付ける機能は「フィレット」です。",
+                            point: "角や稜線を丸くする＝フィレット。"
+                        },
+
+                        // 【練習問題5】フランジ継手のモデリング手順（問17〜20）
+                        {
+                            diagram: diagrams.fig5,
+                            question: "【練習問題5：フランジ継手】設問図の ①「T字断面を軸周りに（ 問17 ）して円筒フランジのベースを作成する。」の空欄（問17）に当てはまる最も適切な語句はどれか。",
+                            options: ["回転", "押し出し", "ロフト", "スイープ"],
+                            correctAnswer: "回転",
+                            explanation: "【正解：回転】中心軸の片側に描いたT字型の半断面スケッチを360度「回転」させることで、段付き円筒フランジを一工程で作成できます。",
+                            point: "軸対称の半断面を回して一体生成＝回転。"
+                        },
+                        {
+                            diagram: diagrams.fig5,
+                            question: "【練習問題5：フランジ継手】設問図の ②「基準穴を1つあけた後、中心軸基準で（ 問18 ）を行い6等分配置する。」の空欄（問18）に当てはまる最も適切な語句はどれか。",
+                            options: ["円周パターン（円形アレイ）", "ミラー", "ロフト", "ドラフト"],
+                            correctAnswer: "円周パターン（円形アレイ）",
+                            explanation: "【正解：円周パターン（円形アレイ）】中心軸の周りに角度と個数（6個・60度間隔など）を指定してフィーチャを放射状に複製する機能は「円周パターン」です。",
+                            point: "中心軸周りに等間隔で並べる＝円周パターン。"
+                        },
+                        {
+                            diagram: diagrams.fig5,
+                            question: "【練習問題5：フランジ継手】設問図の ③「上端エッジに斜めのC面を付ける（ 問19 ）を行う。」の空欄（問19）に当てはまる最も適切な語句はどれか。",
+                            options: ["面取り（チャンファ）", "フィレット", "シェル", "リブ"],
+                            correctAnswer: "面取り（チャンファ）",
+                            explanation: "【正解：面取り（チャンファ）】立体の角や稜線を斜めに削り落とす機能（C面取りなど）を「面取り（チャンファ）」と呼びます。",
+                            point: "角を斜めに削る＝面取り（チャンファ）。"
+                        },
+                        {
+                            diagram: diagrams.fig5,
+                            question: "【練習問題5：フランジ継手】設問図の ④「円筒とフランジの根元角部に応力集中を防ぐ（ 問20 ）を付加する。」の空欄（問20）に当てはまる最も適切な語句はどれか。",
+                            options: ["フィレット", "面取り", "トリム", "投影"],
+                            correctAnswer: "フィレット",
+                            explanation: "【正解：フィレット】段差の根元（内角部）に丸みを付ける「フィレット」を施すことで、荷重時の応力集中を緩和できます。",
+                            point: "根元の応力集中を和らげる丸み＝フィレット。"
+                        },
+
+                        // 【練習問題6】曲面カバーのモデリング手順（問21〜24）
+                        {
+                            diagram: diagrams.fig6,
+                            question: "【練習問題6：曲面カバー】設問図の ①「ガイド曲線に沿って厚みを持たない自由曲面となる（ 問21 ）モデルを作成する。」の空欄（問21）に当てはまる最も適切な語句はどれか。",
+                            options: ["サーフェス", "ワイヤーフレーム", "ボクセル", "アセンブリ"],
+                            correctAnswer: "サーフェス",
+                            explanation: "【正解：サーフェス】厚みを持たず面のみで自由曲面を表現するモデルは「サーフェスモデル」です。",
+                            point: "厚みを持たない自由曲面の集合＝サーフェスモデル。"
+                        },
+                        {
+                            diagram: diagrams.fig6,
+                            question: "【練習問題6：曲面カバー】設問図の ②「作成した曲面に一定の厚みを与える（ 問22 ）機能でソリッド化する。」の空欄（問22）に当てはまる最も適切な語句はどれか。",
+                            options: ["厚み付け（シックン）", "ドラフト", "ミラー", "パターン"],
+                            correctAnswer: "厚み付け（シックン）",
+                            explanation: "【正解：厚み付け（シックン）】サーフェス（面）に対して法線方向に一定の板厚を与えてソリッドモデルに変換する機能は「厚み付け（シックン）」です。",
+                            point: "サーフェスに厚みを与えてソリッド化＝厚み付け（シックン）。"
+                        },
+                        {
+                            diagram: diagrams.fig6,
+                            question: "【練習問題6：曲面カバー】設問図の ③「曲面の不要な部分や開口部を曲線で切り取る（ 問23 ）を行う。」の空欄（問23）に当てはまる最も適切な語句はどれか。",
+                            options: ["トリム", "ロフト", "回転", "リブ"],
+                            correctAnswer: "トリム",
+                            explanation: "【正解：トリム】サーフェスや曲線を交差する境界線・面で切り取り、不要部分を削除する操作を「トリム」と呼びます。",
+                            point: "境界線や面で不要部分を切り落とす＝トリム。"
+                        },
+                        {
+                            diagram: diagrams.fig6,
+                            question: "【練習問題6：曲面カバー】設問図の ④「隣接する複数のサーフェス面を結合して1つの閉じた面にする（ 問24 ）を行う。」の空欄（問24）に当てはまる最も適切な語句はどれか。",
+                            options: ["縫合（ステッチ/ニット）", "ドラフト", "スイープ", "投影"],
+                            correctAnswer: "縫合（ステッチ/ニット）",
+                            explanation: "【正解：縫合（ステッチ/ニット）】複数のサーフェス面のエッジ同士を結合して1つのキルト（複合面）にし、閉空間を作ってソリッド化する操作です。",
+                            point: "複数の面エッジをつないで一体化＝縫合（ステッチ/ニット）。"
+                        },
+
+                        // 【練習問題7】集合演算（CSGブーリアン演算）（問25〜28）
+                        {
+                            diagram: diagrams.fig7,
+                            question: "【練習問題7：集合演算】設問図の ①「直方体Aと円柱Bを1つの立体に合体させる演算（ 問25 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["和（Union）", "差（Difference）", "積（Intersection）", "オフセット"],
+                            correctAnswer: "和（Union）",
+                            explanation: "【正解：和（Union）】2つのソリッド立体を結合し、1つの連続したソリッドモデルにする集合演算は「和」です。",
+                            point: "2つの立体を合体させる＝和（Union）。"
+                        },
+                        {
+                            diagram: diagrams.fig7,
+                            question: "【練習問題7：集合演算】設問図の ②「直方体Aから円柱Bと重なる領域を削り取る演算（ 問26 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["差（Difference）", "和（Union）", "積（Intersection）", "ミラー"],
+                            correctAnswer: "差（Difference）",
+                            explanation: "【正解：差（Difference）】基準の立体Aから別の立体Bの体積を引き算して穴や切り欠きを作る演算は「差」です。",
+                            point: "一方から他方を引き算して削る＝差（Difference）。"
+                        },
+                        {
+                            diagram: diagrams.fig7,
+                            question: "【練習問題7：集合演算】設問図の ③「AとBが重なり合う共通部分だけを残す演算（ 問27 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["積（Intersection）", "和（Union）", "差（Difference）", "シェル"],
+                            correctAnswer: "積（Intersection）",
+                            explanation: "【正解：積（Intersection）】2つのソリッドが空間的に重複している共通領域のみを抽出する演算は「積」です。",
+                            point: "重なり合う共通部分だけを残す＝積（Intersection）。"
+                        },
+                        {
+                            diagram: diagrams.fig7,
+                            question: "【練習問題7：集合演算】設問図の ③「これら『和・差・積』の立体集合演算の総称（ 問28 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["ブーリアン演算", "マスプロパティ演算", "レンダリング演算", "メッシュ分割"],
+                            correctAnswer: "ブーリアン演算",
+                            explanation: "【正解：ブーリアン演算】ブール代数（論理演算・集合演算）を3次元立体に応用した「和・差・積」の総称を「ブーリアン演算」と呼びます。",
+                            point: "和・差・積の集合演算の総称＝ブーリアン演算。"
+                        },
+
+                        // 【練習問題8】3次元空間パイプのモデリング手順（問29〜32）
+                        {
+                            diagram: diagrams.fig8,
+                            question: "【練習問題8：3次元空間パイプ】設問図の ①「3次元軌道（パス）に沿って円断面を（ 問29 ）して丸棒形状を作る。」の空欄（問29）に当てはまる最も適切な語句はどれか。",
+                            options: ["スイープ", "回転", "ロフト", "ドラフト"],
+                            correctAnswer: "スイープ",
+                            explanation: "【正解：スイープ】3次元空間曲線などの軌道（パス）に沿って円形断面を移動させ、曲がりくねったパイプやチューブを作る操作は「スイープ」です。",
+                            point: "3次元パスに沿って断面を移動＝スイープ。"
+                        },
+                        {
+                            diagram: diagrams.fig8,
+                            question: "【練習問題8：3次元空間パイプ】設問図の ②「両端面を開口面として指定し、（ 問30 ）で中空パイプ化する。」の空欄（問30）に当てはまる最も適切な語句はどれか。",
+                            options: ["シェル", "リブ", "面取り", "ミラー"],
+                            correctAnswer: "シェル",
+                            explanation: "【正解：シェル】スイープで作成した中実の丸棒の両端面を開口面としてシェルを実行すると、一定肉厚の中空パイプになります。",
+                            point: "両端を開口面にしてシェル＝中空パイプ。"
+                        },
+                        {
+                            diagram: diagrams.fig8,
+                            question: "【練習問題8：3次元空間パイプ】設問図の ③「平面上の2次元スケッチ曲線を円筒曲面上へ写し取る機能（ 問31 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["投影（プロジェクション）", "フィレット", "シェル", "パターン"],
+                            correctAnswer: "投影（プロジェクション）",
+                            explanation: "【正解：投影（プロジェクション）】平面スケッチの線や文字を曲面やサーフェス上に投影して3次元曲線を作成する機能です。",
+                            point: "2次元曲線を面や曲面へ写し取る＝投影（プロジェクション）。"
+                        },
+                        {
+                            diagram: diagrams.fig8,
+                            question: "【練習問題8：3次元空間パイプ】設問図の ③「コイルばねやねじ山のように螺旋軌道に沿って断面を移動させる機能（ 問32 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["ヘリカルスイープ", "ミラー", "ロフト", "ドラフト"],
+                            correctAnswer: "ヘリカルスイープ",
+                            explanation: "【正解：ヘリカルスイープ】ピッチ（間隔）と回転数を指定した螺旋（ヘリカル）軌道に沿って断面をスイープし、ばねやねじ形状を作る機能です。",
+                            point: "螺旋軌道に沿ってスイープ＝ヘリカルスイープ（ばね・ねじ）。"
+                        },
+
+                        // 【練習問題9】階段状段付きシャフトのモデリングと検証（問33〜36）
+                        {
+                            diagram: diagrams.fig9,
+                            question: "【練習問題9：段付きシャフト】設問図の ①「段付き断面を軸周りに（ 問33 ）して一発で段付き丸軸を生成する。」の空欄（問33）に当てはまる最も適切な語句はどれか。",
+                            options: ["回転", "押し出し", "スイープ", "ロフト"],
+                            correctAnswer: "回転",
+                            explanation: "【正解：回転】複数の円柱を何度も押し出しで積み重ねるよりも、段付きの半断面スケッチを1回「回転」させる方が履歴がシンプルで修正もしやすくなります。",
+                            point: "段付き丸軸・回転体は半断面を1回「回転」させるのが効率的。"
+                        },
+                        {
+                            diagram: diagrams.fig9,
+                            question: "【練習問題9：段付きシャフト】設問図の ②「基準面をオフセット作成してキー溝を（ 問34 ）カットで削り出す。」の空欄（問34）に当てはまる最も適切な語句はどれか。",
+                            options: ["押し出し", "回転", "シェル", "フィレット"],
+                            correctAnswer: "押し出し",
+                            explanation: "【正解：押し出し】円筒面に接するオフセット平面（基準面）を作成し、長円形のキー溝スケッチを深さ指定で「押し出しカット（差）」して溝を加工します。",
+                            point: "基準面（オフセット平面）から直線削り＝押し出しカット。"
+                        },
+                        {
+                            diagram: diagrams.fig9,
+                            question: "【練習問題9：段付きシャフト】設問図の ③「軸と軸受部品を同心・一致などの条件で組み合わせる作業（ 問35 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["アセンブリ拘束", "レンダリング", "メッシュ分割", "ドラフト"],
+                            correctAnswer: "アセンブリ拘束",
+                            explanation: "【正解：アセンブリ拘束】部品の円筒面同士の同心拘束や端面同士の一致拘束などを与え、アセンブリ空間内での位置関係を定義します。",
+                            point: "同心・一致などで部品の位置関係を定義＝アセンブリ拘束。"
+                        },
+                        {
+                            diagram: diagrams.fig9,
+                            question: "【練習問題9：段付きシャフト】設問図の ④「組み立てた部品同士が意図せず重なり合っていないか検証する機能（ 問36 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["干渉チェック", "マスプロパティ", "シェーディング", "トポロジー"],
+                            correctAnswer: "干渉チェック",
+                            explanation: "【正解：干渉チェック】シャフトの段差と軸受などが設計ミスによりめり込んでいないかを自動検出する検証機能です。",
+                            point: "部品同士の重なり・めり込み確認＝干渉チェック。"
+                        },
+
+                        // 【練習問題10】フィレットの順序とパラメトリック履歴（問37〜40）
+                        {
+                            diagram: diagrams.fig10,
+                            question: "【練習問題10：フィレット順序と履歴】設問図の ①「ベースとボスが交わる根元の稜線に先に（ 問37 ）をかけるのが定石。」の空欄（問37）に当てはまる最も適切な語句はどれか。",
+                            options: ["フィレット", "シェル", "ドラフト", "ロフト"],
+                            correctAnswer: "フィレット",
+                            explanation: "【正解：フィレット】外周の角を先に丸めると接合エッジが分断されてエラーになりやすいため、部品同士が交わる根元の稜線に先に「フィレット」をかけるのが定石です。",
+                            point: "交差する根元の稜線に先にフィレットをかけるとエラーを防げる。"
+                        },
+                        {
+                            diagram: diagrams.fig10,
+                            question: "【練習問題10：フィレット順序と履歴】設問図の ②「各フィーチャの作成順序・履歴を管理する設計木を（ 問38 ）ツリーと呼ぶ。」の空欄（問38）に当てはまる最も適切な語句はどれか。",
+                            options: ["フィーチャ（履歴/ヒストリー）", "ネットワーク", "ディレクトリ", "レイヤー"],
+                            correctAnswer: "フィーチャ（履歴/ヒストリー）",
+                            explanation: "【正解：フィーチャ（履歴/ヒストリー）】押し出し・穴・フィレットなどの操作手順を時系列で記録・表示するツリーを「フィーチャツリー（履歴ツリー）」と呼びます。",
+                            point: "作成順序・操作履歴の木構造＝フィーチャ（履歴/ヒストリー）ツリー。"
+                        },
+                        {
+                            diagram: diagrams.fig10,
+                            question: "【練習問題10：フィレット順序と履歴】設問図の ③「寸法値（パラメータ）を変更するとモデル形状が自動的に再計算・更新される手法（ 問39 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["パラメトリックモデリング", "ラスタライズ", "リバースエンジニアリング", "レンダリング"],
+                            correctAnswer: "パラメトリックモデリング",
+                            explanation: "【正解：パラメトリックモデリング】寸法や幾何拘束をパラメータとして保持し、数値変更に連動して3次元形状を自動更新できる機能です。",
+                            point: "寸法・パラメータ変更で形状が連動更新＝パラメトリックモデリング。"
+                        },
+                        {
+                            diagram: diagrams.fig10,
+                            question: "【練習問題10：フィレット順序と履歴】設問図の ③「先行フィーチャの面やエッジを後続フィーチャが参照することで生じる依存関係（ 問40 ）」に当てはまる最も適切な語句はどれか。",
+                            options: ["親子関係（ペアレント・チャイルド関係）", "干渉関係", "排他関係", "同心関係"],
+                            correctAnswer: "親子関係（ペアレント・チャイルド関係）",
+                            explanation: "【正解：親子関係（ペアレント・チャイルド関係）】親フィーチャを削除・大幅変更すると参照先を失った子フィーチャにエラーが生じるため、設計変更を見据えた親子関係の構築が重要です。",
+                            point: "先行（親）と後続（子）の参照依存＝親子関係。"
+                        }
+                    ];
+                })()
+            }
+        ];
+
+        // Application State
+        let currentDataset = null;
+        let currentIndex = 0;
+        let userAnswers = [];
+        let isAnswered = false;
+        let toastTimeout = null;
+        let currentFolder = null;
+
+        // Custom non-blocking notification (Never use alert())
+        function showMessage(msg) {
+            const toast = document.getElementById('custom-toast');
+            const toastMsg = document.getElementById('custom-toast-msg');
+            toastMsg.innerText = msg;
+            toast.classList.remove('hidden');
+
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Initialize Home view on load
+        window.onload = function() {
+            renderHomeView();
+        };
+
+        function renderHomeView(folderId = null) {
+            currentFolder = folderId;
+            changeRandomLibraryBackground();
+            document.getElementById('view-home').classList.remove('hidden');
+            document.getElementById('view-quiz').classList.add('hidden');
+            document.getElementById('view-result').classList.add('hidden');
+            document.getElementById('home-btn-header').classList.add('hidden');
+
+            const container = document.getElementById('file-list-container');
+            container.innerHTML = '';
+
+            if (currentFolder === 'practice_set_1_2') {
+                // サブ階層：第1回・第2回を順番に表示（元のデザインそのまま）
+                const backBar = document.createElement('div');
+                backBar.className = 'flex items-center justify-between mb-1';
+                backBar.innerHTML = `
+                    <button onclick="renderHomeView(null)" class="px-4 py-2 rounded-xl border border-[#c5a059]/50 bg-[#1a151f] hover:bg-[#2a2133] text-[#d4af37] text-xs sm:text-sm font-bold transition shadow flex items-center space-x-2">
+                        <span>◀ ファイル一覧へ戻る</span>
+                    </button>
+                    <span class="text-xs text-[#c5a059] font-semibold tracking-wider">📁 演習問題集</span>
+                `;
+                container.appendChild(backBar);
+
+                const subDatasets = quizDatasets.filter(d => d.group === 'practice_set_1_2');
+                subDatasets.forEach((dataset, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
+                    card.onclick = () => startQuiz(dataset.id);
+
+                    const scrollNumbers = ['壱', '弐', '参', '肆', '伍'];
+                    const scrollLabel = scrollNumbers[index] || (index + 1);
+
+                    card.innerHTML = `
+                        <div class="space-y-2">
+                            <div class="flex items-center space-x-2.5">
+                                <span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                                    御試みの書 ${scrollLabel}
+                                </span>
+                                <span class="text-xs text-[#d4af37] font-bold tracking-wider">全 ${dataset.questions.length} 問収録</span>
+                            </div>
+                            <h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                                ${dataset.title}
+                            </h3>
+                            <p class="text-sm text-[#a69a8c] leading-relaxed">${dataset.description}</p>
+                        </div>
+                        <button class="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0">
+                            <span>試験へ挑む ▶</span>
+                        </button>
+                    `;
+                    container.appendChild(card);
+                });
+                return;
+            }
+
+            // トップホーム：第1回と第2回を1つの「演習問題集」カードにまとめて表示
+            const groupedDatasets = quizDatasets.filter(d => d.group === 'practice_set_1_2');
+            const totalGroupedQuestions = groupedDatasets.reduce((sum, d) => sum + d.questions.length, 0);
+
+            const folderCard = document.createElement('div');
+            folderCard.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
+            folderCard.onclick = () => {
+                renderHomeView('practice_set_1_2');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            folderCard.innerHTML = `
+                <div class="space-y-2">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                            御試みの書 壱
+                        </span>
+                        <span class="text-xs text-[#d4af37] font-bold tracking-wider">演習問題数：全 ${totalGroupedQuestions} 問収録（2回分）</span>
+                    </div>
+                    <h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                        演習問題集
+                    </h3>
+                    <p class="text-sm text-[#a69a8c] leading-relaxed">選択問題や入力問題などをまとめた演習問題集です。</p>
+                </div>
+                <button class="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0">
+                    <span>問題集を開く ▶</span>
+                </button>
+            `;
+            container.appendChild(folderCard);
+
+            // その他のファイル（図問題集2級など）を表示
+            const standaloneDatasets = quizDatasets.filter(d => !d.group);
+            standaloneDatasets.forEach((dataset, idx) => {
+                const card = document.createElement('div');
+                card.className = 'antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group';
+                card.onclick = () => startQuiz(dataset.id);
+
+                const scrollNumbers = ['弐', '参', '肆', '伍'];
+                const scrollLabel = scrollNumbers[idx] || (idx + 2);
+
+                card.innerHTML = `
+                    <div class="space-y-2">
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                                御試みの書 ${scrollLabel}
+                            </span>
+                            <span class="text-xs text-[#d4af37] font-bold tracking-wider">全 ${dataset.questions.length} 問収録</span>
+                        </div>
+                        <h3 class="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                            ${dataset.title}
+                        </h3>
+                        <p class="text-sm text-[#a69a8c] leading-relaxed">${dataset.description}</p>
+                    </div>
+                    <button class="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0">
+                        <span>試験へ挑む ▶</span>
+                    </button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function startQuiz(datasetId) {
+            currentDataset = quizDatasets.find(d => d.id === datasetId);
+            if (!currentDataset) return;
+
+            currentIndex = 0;
+            userAnswers = new Array(currentDataset.questions.length).fill(null);
+            isAnswered = false;
+
+            changeRandomLibraryBackground();
+            document.getElementById('view-home').classList.add('hidden');
+            document.getElementById('view-result').classList.add('hidden');
+            document.getElementById('view-quiz').classList.remove('hidden');
+            document.getElementById('home-btn-header').classList.remove('hidden');
+
+            document.getElementById('quiz-file-title').innerText = currentDataset.title;
+            loadQuestion();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function loadQuestion() {
+            const total = currentDataset.questions.length;
+            const q = currentDataset.questions[currentIndex];
+            const savedAnswer = userAnswers[currentIndex];
+            isAnswered = (savedAnswer !== null);
+
+            document.getElementById('quiz-progress-text').innerText = `第 ${currentIndex + 1} 問 / 全 ${total} 問`;
+            document.getElementById('current-q-badge').innerHTML = `<span>❖ 問題 ${currentIndex + 1}</span>`;
+            document.getElementById('question-text').innerText = q.question;
+
+            const diagramContainer = document.getElementById('question-diagram-container');
+            if (q.diagram) {
+                diagramContainer.innerHTML = q.diagram;
+                diagramContainer.classList.remove('hidden');
+            } else {
+                diagramContainer.innerHTML = '';
+                diagramContainer.classList.add('hidden');
+            }
+
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = '';
+
+            if (q.type === 'multi_fill') {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'space-y-3';
+
+                const inputs = [];
+                q.blanks.forEach((blank, bIdx) => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-3';
+
+                    const badge = document.createElement('span');
+                    badge.className = 'w-9 h-9 rounded-lg bg-[#261829] border border-[#c5a059]/60 text-[#f3e5ab] font-bold flex items-center justify-center shrink-0 text-sm';
+                    badge.innerText = blank.label;
+
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.placeholder = blank.placeholder || `${blank.label}に入る用語を入力`;
+                    input.autocomplete = 'off';
+                    input.className = 'flex-grow px-4 py-3 rounded-xl bg-[#120e16] border border-[#c5a059]/60 text-[#f5efe6] placeholder-[#7d7267] focus:outline-none focus:border-[#ffd700] focus:ring-2 focus:ring-[#d4af37]/30 text-base font-bold tracking-wide';
+
+                    if (isAnswered && Array.isArray(savedAnswer)) {
+                        const userVal = savedAnswer[bIdx] || '';
+                        input.value = userVal;
+                        input.disabled = true;
+                        const blankOk = isSingleBlankCorrect(userVal, blank);
+                        input.className += blankOk
+                            ? ' border-2 border-emerald-500 bg-emerald-950/50 text-emerald-200'
+                            : ' border-2 border-rose-500 bg-rose-950/50 text-rose-200';
+                    }
+
+                    inputs.push(input);
+                    row.appendChild(badge);
+                    row.appendChild(input);
+                    wrapper.appendChild(row);
+                });
+
+                if (!isAnswered) {
+                    const submitBtn = document.createElement('button');
+                    submitBtn.type = 'button';
+                    submitBtn.className = 'antique-btn w-full sm:w-auto px-7 py-3.5 rounded-xl font-bold text-sm sm:text-base mt-2';
+                    submitBtn.innerText = '✦ 解答する';
+
+                    const handleMultiSubmit = () => {
+                        const vals = inputs.map(inp => inp.value.trim());
+                        const emptyIdx = vals.findIndex(v => !v);
+                        if (emptyIdx !== -1) {
+                            showMessage(`${q.blanks[emptyIdx].label} の空欄に用語を入力してください。`);
+                            inputs[emptyIdx].focus();
+                            return;
+                        }
+                        selectOption(vals);
+                    };
+
+                    submitBtn.onclick = handleMultiSubmit;
+                    inputs.forEach((inp, idx) => {
+                        inp.onkeydown = (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (idx < inputs.length - 1) {
+                                    inputs[idx + 1].focus();
+                                } else {
+                                    handleMultiSubmit();
+                                }
+                            }
+                        };
+                    });
+
+                    wrapper.appendChild(submitBtn);
+                    setTimeout(() => inputs[0] && inputs[0].focus(), 50);
+                }
+
+                optionsContainer.appendChild(wrapper);
+            } else if (q.type === 'fill') {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'space-y-4';
+
+                const inputRow = document.createElement('div');
+                inputRow.className = 'flex flex-col sm:flex-row gap-3';
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = 'fill-answer-input';
+                input.placeholder = q.placeholder || '用語を入力してください';
+                input.autocomplete = 'off';
+                input.className = 'flex-grow px-4 py-3.5 rounded-xl bg-[#120e16] border border-[#c5a059]/60 text-[#f5efe6] placeholder-[#7d7267] focus:outline-none focus:border-[#ffd700] focus:ring-2 focus:ring-[#d4af37]/30 text-base sm:text-lg font-bold tracking-wide';
+
+                const submitBtn = document.createElement('button');
+                submitBtn.type = 'button';
+                submitBtn.className = 'antique-btn px-6 py-3.5 rounded-xl font-bold text-sm sm:text-base whitespace-nowrap shrink-0';
+                submitBtn.innerText = '✦ 解答する';
+
+                if (isAnswered) {
+                    input.value = savedAnswer;
+                    input.disabled = true;
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    const correct = isQuestionCorrect(savedAnswer, q);
+                    input.className += correct
+                        ? ' border-2 border-emerald-500 bg-emerald-950/50 text-emerald-200'
+                        : ' border-2 border-rose-500 bg-rose-950/50 text-rose-200';
+                } else {
+                    const handleFillSubmit = () => {
+                        const val = input.value.trim();
+                        if (!val) {
+                            showMessage('空欄に用語を入力してください。');
+                            input.focus();
+                            return;
+                        }
+                        selectOption(val);
+                    };
+                    submitBtn.onclick = handleFillSubmit;
+                    input.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleFillSubmit();
+                        }
+                    };
+                }
+
+                inputRow.appendChild(input);
+                inputRow.appendChild(submitBtn);
+                wrapper.appendChild(inputRow);
+
+                optionsContainer.appendChild(wrapper);
+                if (!isAnswered) {
+                    setTimeout(() => input.focus(), 50);
+                }
+            } else {
+                q.options.forEach((opt, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'antique-option w-full text-left p-4 rounded-xl font-medium flex items-center justify-between transition';
+                    
+                    let iconText = String.fromCharCode(9312 + idx); // ①, ②, ③, ④
+                    btn.innerHTML = `
+                        <span class="flex items-start space-x-3">
+                            <span class="font-bold text-[#d4af37] text-lg leading-snug">${iconText}</span>
+                            <span class="leading-snug">${opt}</span>
+                        </span>
+                    `;
+
+                    if (isAnswered) {
+                        btn.disabled = true;
+                        if (opt === q.correctAnswer) {
+                            btn.className = 'w-full text-left p-4 rounded-xl font-bold flex items-center justify-between border-2 border-emerald-500/80 bg-emerald-950/70 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.25)]';
+                            btn.innerHTML += `<span class="text-xs px-2 py-0.5 rounded bg-emerald-800/80 text-emerald-100 ml-2 shrink-0">正解</span>`;
+                        } else if (savedAnswer === opt && opt !== q.correctAnswer) {
+                            btn.className = 'w-full text-left p-4 rounded-xl font-bold flex items-center justify-between border-2 border-rose-500/80 bg-rose-950/70 text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.25)]';
+                            btn.innerHTML += `<span class="text-xs px-2 py-0.5 rounded bg-rose-800/80 text-rose-100 ml-2 shrink-0">あなたの選択</span>`;
+                        } else {
+                            btn.className += ' opacity-45';
+                        }
+                    } else {
+                        btn.onclick = () => selectOption(opt);
+                    }
+
+                    optionsContainer.appendChild(btn);
+                });
+            }
+
+            // Handle explanation box
+            const expBox = document.getElementById('explanation-box');
+            if (isAnswered) {
+                showExplanationUI(savedAnswer, q);
+            } else {
+                expBox.classList.add('hidden');
+            }
+
+            // Update Navigation Buttons
+            const prevBtn = document.getElementById('prev-btn');
+            prevBtn.disabled = (currentIndex === 0);
+            prevBtn.style.opacity = (currentIndex === 0) ? '0.4' : '1';
+            prevBtn.style.cursor = (currentIndex === 0) ? 'not-allowed' : 'pointer';
+
+            const nextBtnText = document.getElementById('next-btn-text');
+            if (currentIndex === total - 1) {
+                nextBtnText.innerText = '✦ 最終結果へ ✦';
+            } else {
+                nextBtnText.innerText = '次へ ▶';
+            }
+        }
+
+        function normalizeAnswer(str) {
+            return String(str || '')
+                .trim()
+                .replace(/[Ａ-Ｚａ-ｚ０-９－]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+                .replace(/[‐‑‒–—―ー]/g, '-')
+                .replace(/\s+/g, '')
+                .toLowerCase();
+        }
+
+        function isSingleBlankCorrect(userVal, blank) {
+            const normUser = normalizeAnswer(userVal);
+            const list = blank.acceptedAnswers || [blank.correctAnswer];
+            return list.some(ans => normalizeAnswer(ans) === normUser);
+        }
+
+        function isQuestionCorrect(userAns, q) {
+            if (userAns === null || userAns === undefined) return false;
+            if (q.type === 'multi_fill') {
+                if (!Array.isArray(userAns)) return false;
+                return q.blanks.every((blank, idx) => isSingleBlankCorrect(userAns[idx], blank));
+            }
+            if (q.type === 'fill') {
+                const normUser = normalizeAnswer(userAns);
+                const list = q.acceptedAnswers || [q.correctAnswer];
+                return list.some(ans => normalizeAnswer(ans) === normUser);
+            }
+            return userAns === q.correctAnswer;
+        }
+
+        function selectOption(selectedOpt) {
+            if (isAnswered) return;
+
+            userAnswers[currentIndex] = selectedOpt;
+            isAnswered = true;
+            loadQuestion();
+        }
+
+        function showExplanationUI(selectedOpt, q) {
+            const expBox = document.getElementById('explanation-box');
+            const expHeader = document.getElementById('explanation-header');
+            const expText = document.getElementById('explanation-text');
+
+            expBox.classList.remove('hidden');
+            const isCorrect = isQuestionCorrect(selectedOpt, q);
+            const displayCorrectAnswer = q.type === 'multi_fill'
+                ? q.blanks.map(b => `${b.label}：${b.correctAnswer}`).join(' ／ ')
+                : q.correctAnswer;
+
+            if (isCorrect) {
+                expBox.className = 'mt-6 p-5 rounded-xl border-l-4 border-emerald-500 bg-[#0f241d] text-emerald-100 shadow-inner animate-fadeIn';
+                expHeader.innerHTML = `
+                    <svg class="w-6 h-6 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span class="text-lg text-emerald-300">見事、正解です！（正解：<strong class="text-[#f3e5ab]">${displayCorrectAnswer}</strong>）</span>
+                `;
+            } else {
+                expBox.className = 'mt-6 p-5 rounded-xl border-l-4 border-rose-500 bg-[#261117] text-rose-100 shadow-inner animate-fadeIn';
+                expHeader.innerHTML = `
+                    <svg class="w-6 h-6 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span class="text-lg text-rose-300">惜しくも不正解（正解：<strong class="underline text-[#f3e5ab]">${displayCorrectAnswer}</strong>）</span>
+                `;
+            }
+
+            const pointHtml = q.point
+                ? `<div class="mt-3 p-3.5 rounded-lg bg-[#1a141e]/90 border border-[#c5a059]/50 text-[#f3e5ab]">
+                        <span class="text-xs tracking-wider text-[#ffd700] font-bold block mb-1">💡 覚えるポイント</span>
+                        <span class="font-semibold">${q.point}</span>
+                   </div>`
+                : '';
+
+            expText.innerHTML = `
+                <div class="mt-2 pt-2 border-t border-white/10 text-[#e6dfd3]">
+                    <span class="text-xs uppercase tracking-wider text-[#d4af37] font-bold block mb-1">✦ 解説</span>
+                    <p>${q.explanation}</p>
+                    ${pointHtml}
+                </div>
+            `;
+        }
+
+        function nextQuestion() {
+            const total = currentDataset.questions.length;
+            if (!isAnswered && userAnswers[currentIndex] === null) {
+                showMessage(currentDataset.questions[currentIndex].type === 'fill'
+                    ? '空欄に用語を入力して「解答する」を押してください。'
+                    : 'いずれかの選択肢を1つお選びください。');
+                return;
+            }
+
+            if (currentIndex < total - 1) {
+                currentIndex++;
+                changeRandomLibraryBackground();
+                loadQuestion();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                showResult();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                changeRandomLibraryBackground();
+                loadQuestion();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function showResult() {
+            changeRandomLibraryBackground();
+            document.getElementById('view-quiz').classList.add('hidden');
+            document.getElementById('view-result').classList.remove('hidden');
+
+            let correctCount = 0;
+            let incorrectCount = 0;
+            const total = currentDataset.questions.length;
+
+            currentDataset.questions.forEach((q, idx) => {
+                if (isQuestionCorrect(userAnswers[idx], q)) {
+                    correctCount++;
+                } else {
+                    incorrectCount++;
+                }
+            });
+
+            const percentage = Math.round((correctCount / total) * 100);
+
+            document.getElementById('result-file-subtitle').innerText = `対象試験： ${currentDataset.title}`;
+            document.getElementById('stat-correct').innerText = `${correctCount} 回`;
+            document.getElementById('stat-incorrect').innerText = `${incorrectCount} 回`;
+            document.getElementById('stat-percentage').innerText = `${percentage}%`;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function retryQuiz() {
+            if (currentDataset) {
+                startQuiz(currentDataset.id);
+            }
+        }
+
+        function goToHome() {
+            renderHomeView(null);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
