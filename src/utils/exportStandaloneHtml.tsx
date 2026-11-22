@@ -72,7 +72,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       position: fixed;
       inset: 0;
       z-index: -1;
-      background: radial-gradient(circle at 50% 35%, rgba(13, 10, 14, 0.58) 0%, rgba(7, 5, 9, 0.88) 100%);
+      background: radial-gradient(circle at 50% 35%, rgba(13, 10, 14, 0.30) 0%, rgba(7, 5, 9, 0.50) 100%);
       backdrop-filter: blur(2px);
       pointer-events: none;
     }
