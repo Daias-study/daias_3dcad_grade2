@@ -151,9 +151,24 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         </div>
       </div>
       <div class="flex items-center space-x-3">
-        <span id="bg-scene-badge" class="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
-          🏛️ 書庫情景
-        </span>
+        <div id="scene-menu-container" class="relative">
+          <span id="bg-scene-badge" onclick="handleSceneBadgeClick()" class="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
+            🏛️ 書庫情景
+          </span>
+          <div id="scene-menu-popover" class="hidden absolute right-0 mt-2 w-72 rounded-xl bg-[#141019]/95 backdrop-blur-md border border-[#c5a059]/70 shadow-2xl p-2 z-50 animate-fadeIn">
+            <div class="px-2.5 py-1.5 text-[11px] font-bold text-[#d4af37] border-b border-[#c5a059]/25 mb-1 flex items-center justify-between">
+              <span>🎬 背景動画を選択</span>
+              <span class="text-[10px] text-[#9e9285]">テストモード</span>
+            </div>
+            <div id="scene-menu-list" class="max-h-64 overflow-y-auto space-y-1"></div>
+            <div class="border-t border-[#c5a059]/25 mt-2 pt-2">
+              <input id="custom-video-file-input" type="file" accept="video/*" onchange="handleCustomVideoSelect(this)" class="hidden" />
+              <button type="button" onclick="document.getElementById('custom-video-file-input').click()" class="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] border border-[#c5a059]/50 transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <span>📁 任意の動画ファイルを選択</span>
+              </button>
+            </div>
+          </div>
+        </div>
         <button id="home-btn-header" onclick="goToHome()" class="hidden text-xs sm:text-sm px-4 py-2 rounded-lg bg-[#1d1722] hover:bg-[#3a1c24] text-[#d4af37] border border-[#c5a059]/50 transition shadow cursor-pointer">
           🗝️ ホームへ戻る
         </button>
@@ -243,8 +258,8 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         </div>
 
         <div class="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 pt-4">
-          <button onclick="goToHome()" class="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
-            <span>🗝️ ホームに戻る</span>
+          <button onclick="handleResultHomeClick()" class="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
+            <span id="result-home-btn-text">🗝️ ホームに戻る</span>
           </button>
           <button id="retry-incorrect-btn" onclick="retryIncorrectOnly()" class="hidden w-full sm:w-auto px-6 py-3.5 rounded-xl border border-rose-500/70 bg-[#2d141d] hover:bg-[#421a28] text-[#f3e5ab] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer">
             <span id="retry-incorrect-text">🔄 間違えた問題だけをやり直す</span>
@@ -628,6 +643,8 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     let keyBuffer = '';
     let jumpTimer = null;
     let totalTimer = null;
+    let showSceneMenu = false;
+    let customVideo = null;
 
     function getEffectiveTotal() {
       if (!currentDataset) return 0;
@@ -636,17 +653,104 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       return Math.max(1, Math.min(testQuestionLimit, max));
     }
 
+    function clearCustomVideo() {
+      if (customVideo && customVideo.url) {
+        try { URL.revokeObjectURL(customVideo.url); } catch (e) {}
+      }
+      customVideo = null;
+    }
+
+    function closeSceneMenu() {
+      showSceneMenu = false;
+      const pop = document.getElementById('scene-menu-popover');
+      if (pop) pop.classList.add('hidden');
+    }
+
+    function renderSceneMenuList() {
+      const listEl = document.getElementById('scene-menu-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      darkAcademiaLibraryScenes.forEach((scene, idx) => {
+        const isActive = !customVideo && lastBgIndex === idx;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition cursor-pointer ' +
+          (isActive
+            ? 'bg-[#3a1c24] text-[#f3e5ab] border border-[#d4af37]/70 font-bold'
+            : 'text-[#dfd7c8] hover:bg-[#231b2b] border border-transparent');
+        btn.onclick = () => selectSceneByIndex(idx);
+        btn.innerHTML = '<span class="truncate">' + (idx + 1) + '. ' + escapeHtml(scene.name) + '</span>' +
+          (isActive ? '<span class="text-[10px] text-[#ffd700] shrink-0">再生中</span>' : '');
+        listEl.appendChild(btn);
+      });
+    }
+
+    function handleSceneBadgeClick() {
+      if (!isTestMode) return;
+      showSceneMenu = !showSceneMenu;
+      const pop = document.getElementById('scene-menu-popover');
+      if (!pop) return;
+      if (showSceneMenu) {
+        renderSceneMenuList();
+        pop.classList.remove('hidden');
+      } else {
+        pop.classList.add('hidden');
+      }
+    }
+
+    function applyBackgroundVideoUrl(url) {
+      const bgVideo = document.getElementById('library-bg-video');
+      if (!bgVideo) return;
+      if (bgVideo.getAttribute('src') !== url) {
+        bgVideo.src = url;
+        bgVideo.load();
+      }
+      bgVideo.play().catch(() => {});
+    }
+
+    function selectSceneByIndex(idx) {
+      if (idx < 0 || idx >= darkAcademiaLibraryScenes.length) return;
+      clearCustomVideo();
+      lastBgIndex = idx;
+      applyBackgroundVideoUrl(darkAcademiaLibraryScenes[idx].url);
+      closeSceneMenu();
+      updateSceneBadge();
+    }
+
+    function handleCustomVideoSelect(inputEl) {
+      const file = inputEl && inputEl.files ? inputEl.files[0] : null;
+      if (!file) return;
+      clearCustomVideo();
+      const url = URL.createObjectURL(file);
+      customVideo = { name: file.name, url: url };
+      applyBackgroundVideoUrl(url);
+      inputEl.value = '';
+      closeSceneMenu();
+      updateSceneBadge();
+    }
+
     function updateSceneBadge() {
       const badge = document.getElementById('bg-scene-badge');
       if (!badge || lastBgIndex < 0) return;
       const scene = darkAcademiaLibraryScenes[lastBgIndex];
-      badge.innerText = isTestMode
-        ? '🏛️ ' + scene.name + ' (' + (lastBgIndex + 1) + '/' + darkAcademiaLibraryScenes.length + ')'
-        : '🏛️ ' + scene.name;
+      if (isTestMode) {
+        badge.className = 'inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-[#2a1c30] hover:bg-[#3a2542] text-[#f3e5ab] border border-[#d4af37]/70 hover:border-[#ffd700] tracking-wider transition shadow cursor-pointer';
+        badge.title = 'クリックして背景動画を選択';
+        if (customVideo) {
+          badge.innerHTML = '<span class="max-w-[180px] sm:max-w-[240px] truncate">🎬 ' + escapeHtml(customVideo.name) + ' (任意)</span><span class="text-[9px] text-[#d4af37]">▼</span>';
+        } else {
+          badge.innerHTML = '<span class="max-w-[180px] sm:max-w-[240px] truncate">🏛️ ' + escapeHtml(scene.name) + ' (' + (lastBgIndex + 1) + '/' + darkAcademiaLibraryScenes.length + ')</span><span class="text-[9px] text-[#d4af37]">▼</span>';
+        }
+      } else {
+        badge.className = 'hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider';
+        badge.title = '';
+        badge.innerText = '🏛️ ' + scene.name;
+      }
     }
 
     function updateTestModeUI() {
       updateSceneBadge();
+      if (showSceneMenu) renderSceneMenuList();
       const homeBar = document.getElementById('test-mode-home-bar');
       if (homeBar) {
         if (isTestMode) homeBar.classList.remove('hidden');
@@ -670,6 +774,12 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     function exitTestMode() {
       isTestMode = false;
       testQuestionLimit = null;
+      closeSceneMenu();
+      const hadCustom = !!customVideo;
+      clearCustomVideo();
+      if (hadCustom && lastBgIndex >= 0) {
+        applyBackgroundVideoUrl(darkAcademiaLibraryScenes[lastBgIndex].url);
+      }
       closeSecretInput();
       keyBuffer = '';
       updateTestModeUI();
@@ -709,14 +819,21 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         nextIndex = Math.floor(Math.random() * darkAcademiaLibraryScenes.length);
       } while (nextIndex === lastBgIndex && darkAcademiaLibraryScenes.length > 1);
       lastBgIndex = nextIndex;
-      const scene = darkAcademiaLibraryScenes[nextIndex];
-      if (bgVideo.getAttribute('src') !== scene.url) {
-        bgVideo.src = scene.url;
-        bgVideo.load();
+      if (!(isTestMode && customVideo)) {
+        const scene = darkAcademiaLibraryScenes[nextIndex];
+        applyBackgroundVideoUrl(scene.url);
       }
-      bgVideo.play().catch(() => {});
       updateSceneBadge();
+      if (showSceneMenu) renderSceneMenuList();
     }
+
+    document.addEventListener('mousedown', function(e) {
+      if (!showSceneMenu) return;
+      const container = document.getElementById('scene-menu-container');
+      if (container && !container.contains(e.target)) {
+        closeSceneMenu();
+      }
+    });
 
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && isTestMode) {
@@ -1302,6 +1419,12 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       const incorrectCount = incorrectList.length;
       const percentage = Math.round((correctCount / total) * 100);
       document.getElementById('result-file-subtitle').innerText = '対象試験： ' + currentDataset.title;
+      const resultHomeText = document.getElementById('result-home-btn-text');
+      if (resultHomeText) {
+        resultHomeText.innerText = currentDataset.id === REVIEW_DATASET_ID
+          ? '🗝️ セーブしてホームに戻る'
+          : '🗝️ ホームに戻る';
+      }
       document.getElementById('stat-correct').innerText = correctCount + ' 回';
       document.getElementById('stat-incorrect').innerText = incorrectCount + ' 回';
       document.getElementById('stat-percentage').innerText = percentage + '%';
@@ -1341,6 +1464,14 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         return;
       }
       startQuizWithDataset(currentDataset);
+    }
+
+    function handleResultHomeClick() {
+      if (currentDataset && currentDataset.id === REVIEW_DATASET_ID) {
+        saveStoredReviewQuestions(reviewQuestions);
+        showMessage('✦ 復習データをセーブしました。');
+      }
+      goToHome();
     }
 
     function goToHome() {

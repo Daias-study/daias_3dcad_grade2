@@ -65,9 +65,17 @@ export default function App() {
   const [secretDraft, setSecretDraft] = useState<string>('');
   const [transferImportDraft, setTransferImportDraft] = useState<string>('');
   const [confirmResetData, setConfirmResetData] = useState<boolean>(false);
+  const [showSceneMenu, setShowSceneMenu] = useState<boolean>(false);
+  const [customVideo, setCustomVideo] = useState<{
+    name: string;
+    url: string;
+  } | null>(null);
 
   const bgVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastBgIndexRef = useRef<number>(-1);
+  const customVideoUrlRef = useRef<string | null>(null);
+  const sceneMenuRef = useRef<HTMLDivElement | null>(null);
+  const customVideoInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const jumpTimerRef = useRef<number | null>(null);
   const totalTimerRef = useRef<number | null>(null);
@@ -93,15 +101,47 @@ export default function App() {
     setSceneIndex(nextIndex);
   }, []);
 
+  const clearCustomVideo = useCallback(() => {
+    if (customVideoUrlRef.current) {
+      URL.revokeObjectURL(customVideoUrlRef.current);
+      customVideoUrlRef.current = null;
+    }
+    setCustomVideo(null);
+  }, []);
+
+  const selectSceneByIndex = useCallback(
+    (idx: number) => {
+      if (idx < 0 || idx >= darkAcademiaLibraryScenes.length) return;
+      clearCustomVideo();
+      lastBgIndexRef.current = idx;
+      setSceneIndex(idx);
+      setShowSceneMenu(false);
+    },
+    [clearCustomVideo]
+  );
+
+  const playCustomVideoFile = useCallback((file: File) => {
+    if (customVideoUrlRef.current) {
+      URL.revokeObjectURL(customVideoUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(file);
+    customVideoUrlRef.current = objectUrl;
+    setCustomVideo({ name: file.name, url: objectUrl });
+    setShowSceneMenu(false);
+  }, []);
+
   useEffect(() => {
     changeRandomLibraryBackground();
   }, [changeRandomLibraryBackground]);
 
   useEffect(() => {
-    const video = bgVideoRef.current;
-    if (!video) return;
-    video.play().catch(() => {});
-  }, [sceneIndex]);
+    return () => {
+      if (customVideoUrlRef.current) {
+        URL.revokeObjectURL(customVideoUrlRef.current);
+        customVideoUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -167,11 +207,13 @@ export default function App() {
     editingTotalRef.current = false;
     setIsTestMode(false);
     setTestQuestionLimit(null);
+    setShowSceneMenu(false);
+    clearCustomVideo();
     setShowSecretInput(false);
     setSecretDraft('');
     keyBufferRef.current = '';
     showMessage('✦ テストモードを終了しました。');
-  }, [showMessage]);
+  }, [showMessage, clearCustomVideo]);
 
   const currentQuestion =
     currentDataset?.questions[currentIndex] ?? null;
@@ -271,6 +313,20 @@ export default function App() {
     document.addEventListener('keydown', handleEscape, true);
     return () => document.removeEventListener('keydown', handleEscape, true);
   }, [isTestMode, exitTestMode]);
+
+  useEffect(() => {
+    if (!showSceneMenu) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        sceneMenuRef.current &&
+        !sceneMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowSceneMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showSceneMenu]);
 
   useEffect(() => {
     if (showSecretInput) {
@@ -531,6 +587,16 @@ export default function App() {
   };
 
   const currentScene = darkAcademiaLibraryScenes[sceneIndex];
+  const activeVideoUrl =
+    isTestMode && customVideo ? customVideo.url : currentScene.url;
+  const activeSceneName =
+    isTestMode && customVideo ? customVideo.name : currentScene.name;
+
+  useEffect(() => {
+    const video = bgVideoRef.current;
+    if (!video) return;
+    video.play().catch(() => {});
+  }, [activeVideoUrl]);
 
   const activeQuestions = currentDataset
     ? currentDataset.questions.slice(0, effectiveTotal)
@@ -580,8 +646,8 @@ export default function App() {
     <>
       <video
         ref={bgVideoRef}
-        key={currentScene.url}
-        src={currentScene.url}
+        key={activeVideoUrl}
+        src={activeVideoUrl}
         autoPlay
         loop
         muted
@@ -623,12 +689,87 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            <span className="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
-              🏛️ {currentScene.name}
-              {isTestMode
-                ? ` (${sceneIndex + 1}/${darkAcademiaLibraryScenes.length})`
-                : ''}
-            </span>
+            <div ref={sceneMenuRef} className="relative">
+              {isTestMode ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSceneMenu((prev) => !prev)}
+                  title="クリックして背景動画を選択"
+                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-[#2a1c30] hover:bg-[#3a2542] text-[#f3e5ab] border border-[#d4af37]/70 hover:border-[#ffd700] tracking-wider transition shadow cursor-pointer"
+                >
+                  <span className="max-w-[180px] sm:max-w-[240px] truncate">
+                    {customVideo ? '🎬' : '🏛️'} {activeSceneName}{' '}
+                    {customVideo
+                      ? '(任意)'
+                      : `(${sceneIndex + 1}/${darkAcademiaLibraryScenes.length})`}
+                  </span>
+                  <span className="text-[9px] text-[#d4af37]">▼</span>
+                </button>
+              ) : (
+                <span className="hidden md:inline-block text-[11px] px-3 py-1 rounded-full bg-[#17121c]/90 text-[#c5a059] border border-[#c5a059]/30 tracking-wider">
+                  🏛️ {currentScene.name}
+                </span>
+              )}
+
+              {isTestMode && showSceneMenu && (
+                <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#141019]/95 backdrop-blur-md border border-[#c5a059]/70 shadow-2xl p-2 z-50 animate-fadeIn">
+                  <div className="px-2.5 py-1.5 text-[11px] font-bold text-[#d4af37] border-b border-[#c5a059]/25 mb-1 flex items-center justify-between">
+                    <span>🎬 背景動画を選択</span>
+                    <span className="text-[10px] text-[#9e9285]">
+                      テストモード
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto space-y-1">
+                    {darkAcademiaLibraryScenes.map((scene, idx) => {
+                      const isActive = !customVideo && sceneIndex === idx;
+                      return (
+                        <button
+                          key={scene.url}
+                          type="button"
+                          onClick={() => selectSceneByIndex(idx)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition cursor-pointer ${
+                            isActive
+                              ? 'bg-[#3a1c24] text-[#f3e5ab] border border-[#d4af37]/70 font-bold'
+                              : 'text-[#dfd7c8] hover:bg-[#231b2b] border border-transparent'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {idx + 1}. {scene.name}
+                          </span>
+                          {isActive && (
+                            <span className="text-[10px] text-[#ffd700] shrink-0">
+                              再生中
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="border-t border-[#c5a059]/25 mt-2 pt-2">
+                    <input
+                      ref={customVideoInputRef}
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          playCustomVideoFile(file);
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => customVideoInputRef.current?.click()}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] border border-[#c5a059]/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>📁 任意の動画ファイルを選択</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             {viewMode !== 'home' && (
               <button
                 type="button"
@@ -1335,10 +1476,20 @@ export default function App() {
               <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 pt-4">
                 <button
                   type="button"
-                  onClick={() => goToHome(null)}
+                  onClick={() => {
+                    if (currentDataset.id === REVIEW_DATASET_ID) {
+                      saveStoredReviewQuestions(reviewQuestions);
+                      showMessage('✦ 復習データをセーブしました。');
+                    }
+                    goToHome(null);
+                  }}
                   className="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer"
                 >
-                  <span>🗝️ ホームに戻る</span>
+                  <span>
+                    {currentDataset.id === REVIEW_DATASET_ID
+                      ? '🗝️ セーブしてホームに戻る'
+                      : '🗝️ ホームに戻る'}
+                  </span>
                 </button>
                 {incorrectQuestions.length > 0 && (
                   <button
