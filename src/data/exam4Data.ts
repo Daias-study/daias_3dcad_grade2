@@ -5,7 +5,7 @@ export const exam4Dataset: QuizDataset = {
   group: 'practice_set_1_2',
   title: '第4回3次元CAD利用技術者試験',
   description:
-    'Part 1（選択問題30問）＋ Part 2（文章穴埋め問題15問・複数空欄対応）を完全収録。パラメトリック・拘束・モデリング操作・アセンブリ自由度・干渉チェック・PDQ/STEP/STL/BOM/PDM/DMUまで全45問。',
+    'Part 1（選択問題30問）＋ Part 2（文章穴埋め問題15問・複数空欄対応）を完全収録。',
   questions: [
     // Part 1 選択問題（問題1〜30）
     {
