@@ -1022,6 +1022,10 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    function isReviewSessionDataset(ds) {
+      return Boolean(ds && (ds.id === REVIEW_DATASET_ID || ds.isReview));
+    }
+
     function startQuiz(datasetId) {
       if (datasetId === REVIEW_DATASET_ID) {
         if (reviewQuestions.length === 0) {
@@ -1030,6 +1034,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
         }
         startQuizWithDataset({
           id: REVIEW_DATASET_ID,
+          isReview: true,
           title: '復習問題集',
           description: 'これまで間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。',
           questions: reviewQuestions.slice()
@@ -1341,7 +1346,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
           reviewQuestions.push(q);
           saveStoredReviewQuestions(reviewQuestions);
         }
-      } else if (currentDataset && currentDataset.id === REVIEW_DATASET_ID) {
+      } else if (isReviewSessionDataset(currentDataset)) {
         const nextList = reviewQuestions.filter(item => getQuestionKey(item) !== key);
         if (nextList.length !== reviewQuestions.length) {
           reviewQuestions = nextList;
@@ -1421,7 +1426,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       document.getElementById('result-file-subtitle').innerText = '対象試験： ' + currentDataset.title;
       const resultHomeText = document.getElementById('result-home-btn-text');
       if (resultHomeText) {
-        resultHomeText.innerText = currentDataset.id === REVIEW_DATASET_ID
+        resultHomeText.innerText = isReviewSessionDataset(currentDataset)
           ? '🗝️ セーブしてホームに戻る'
           : '🗝️ ホームに戻る';
       }
@@ -1446,11 +1451,13 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       const total = getEffectiveTotal();
       const incorrectList = currentDataset.questions.slice(0, total).filter((q, idx) => !isQuestionCorrect(userAnswers[idx], q));
       if (incorrectList.length === 0) return;
+      const isReview = isReviewSessionDataset(currentDataset);
       const title = currentDataset.title.endsWith('（間違えた問題）')
         ? currentDataset.title
         : currentDataset.title + '（間違えた問題）';
       startQuizWithDataset({
         id: 'retry_incorrect_' + Date.now(),
+        isReview: isReview,
         title: title,
         description: currentDataset.title + ' で間違えた ' + incorrectList.length + ' 問の復習用セットです。',
         questions: incorrectList
@@ -1467,7 +1474,30 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     function handleResultHomeClick() {
-      if (currentDataset && currentDataset.id === REVIEW_DATASET_ID) {
+      if (isReviewSessionDataset(currentDataset)) {
+        const total = getEffectiveTotal();
+        const answeredCorrectKeys = new Set();
+        const answeredWrong = [];
+        currentDataset.questions.slice(0, total).forEach((q, idx) => {
+          const ans = userAnswers[idx];
+          if (ans === null || ans === undefined) return;
+          if (isQuestionCorrect(ans, q)) {
+            answeredCorrectKeys.add(getQuestionKey(q));
+          } else {
+            answeredWrong.push(q);
+          }
+        });
+        let updated = reviewQuestions.filter(item => !answeredCorrectKeys.has(getQuestionKey(item)));
+        const existingKeys = new Set(updated.map(getQuestionKey));
+        for (let i = 0; i < answeredWrong.length; i++) {
+          const wq = answeredWrong[i];
+          const wk = getQuestionKey(wq);
+          if (!existingKeys.has(wk)) {
+            existingKeys.add(wk);
+            updated.push(wq);
+          }
+        }
+        reviewQuestions = updated;
         saveStoredReviewQuestions(reviewQuestions);
         showMessage('✦ 復習データをセーブしました。');
       }

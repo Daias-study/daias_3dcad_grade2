@@ -52,6 +52,7 @@ export type QuizQuestion = ChoiceQuestion | FillQuestion | MultiFillQuestion;
 export interface QuizDataset {
   id: string;
   group?: string;
+  isReview?: boolean;
   title: string;
   countSuffix?: string;
   description: string;

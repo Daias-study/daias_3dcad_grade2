@@ -31,4 +31,16 @@ export const darkAcademiaLibraryScenes: LibraryScene[] = [
     name: '肖像画と大階段の広間',
     url: `${BASE}assets/aistudio/Seamless_loop_video_in_hallway_ba6be0b4_11ffc63a.mp4`,
   },
+  {
+    name: '螺旋階段と燭光の書庫塔',
+    url: `${BASE}assets/aistudio/Climbing_dark_spiral_staircase_ae5d51a5_38574330.mp4`,
+  },
+  {
+    name: '霧森を望む古時計の書廊',
+    url: `${BASE}assets/aistudio/________________________9cfca9ad_05609d50.mp4`,
+  },
+  {
+    name: '肖像と胸像の赤絨毯回廊',
+    url: `${BASE}assets/aistudio/Walking_through_indoor_hallway_42a540ac_395b156b.mp4`,
+  },
 ];

@@ -365,6 +365,9 @@ export default function App() {
     scrollToTop();
   };
 
+  const isReviewSessionDataset = (dataset: QuizDataset | null): boolean =>
+    Boolean(dataset && (dataset.id === REVIEW_DATASET_ID || dataset.isReview));
+
   const startQuiz = (datasetId: string) => {
     if (datasetId === REVIEW_DATASET_ID) {
       if (reviewQuestions.length === 0) {
@@ -373,10 +376,11 @@ export default function App() {
       }
       startQuizWithDataset({
         id: REVIEW_DATASET_ID,
+        isReview: true,
         title: '復習問題集',
         description:
           'これまで間違えた問題のみを収録した復習専用の書です。正解するとリストから外れます。',
-        questions: reviewQuestions,
+        questions: [...reviewQuestions],
       });
       return;
     }
@@ -405,7 +409,7 @@ export default function App() {
         saveStoredReviewQuestions(updated);
         return updated;
       });
-    } else if (currentDataset?.id === REVIEW_DATASET_ID) {
+    } else if (isReviewSessionDataset(currentDataset)) {
       setReviewQuestions((prev) => {
         const updated = prev.filter((item) => getQuestionKey(item) !== key);
         if (updated.length !== prev.length) {
@@ -618,8 +622,10 @@ export default function App() {
 
   const retryIncorrectOnly = () => {
     if (!currentDataset || incorrectQuestions.length === 0) return;
+    const isReview = isReviewSessionDataset(currentDataset);
     const retryDataset: QuizDataset = {
       id: `retry_incorrect_${Date.now()}`,
+      isReview,
       title: currentDataset.title.endsWith('（間違えた問題）')
         ? currentDataset.title
         : `${currentDataset.title}（間違えた問題）`,
@@ -627,6 +633,36 @@ export default function App() {
       questions: incorrectQuestions,
     };
     startQuizWithDataset(retryDataset);
+  };
+
+  const syncReviewFromActiveSession = () => {
+    if (!currentDataset || !isReviewSessionDataset(currentDataset)) return;
+    const answeredCorrectKeys = new Set<string>();
+    const answeredWrong: QuizQuestion[] = [];
+    activeQuestions.forEach((q, idx) => {
+      const ans = userAnswers[idx];
+      if (ans === null || ans === undefined) return;
+      if (isQuestionCorrect(ans, q)) {
+        answeredCorrectKeys.add(getQuestionKey(q));
+      } else {
+        answeredWrong.push(q);
+      }
+    });
+    setReviewQuestions((prev) => {
+      let updated = prev.filter(
+        (item) => !answeredCorrectKeys.has(getQuestionKey(item))
+      );
+      const existingKeys = new Set(updated.map(getQuestionKey));
+      for (const wq of answeredWrong) {
+        const wk = getQuestionKey(wq);
+        if (!existingKeys.has(wk)) {
+          existingKeys.add(wk);
+          updated = [...updated, wq];
+        }
+      }
+      saveStoredReviewQuestions(updated);
+      return updated;
+    });
   };
 
   const currentQuestionCorrect =
@@ -1477,8 +1513,8 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (currentDataset.id === REVIEW_DATASET_ID) {
-                      saveStoredReviewQuestions(reviewQuestions);
+                    if (isReviewSessionDataset(currentDataset)) {
+                      syncReviewFromActiveSession();
                       showMessage('✦ 復習データをセーブしました。');
                     }
                     goToHome(null);
@@ -1486,7 +1522,7 @@ export default function App() {
                   className="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   <span>
-                    {currentDataset.id === REVIEW_DATASET_ID
+                    {isReviewSessionDataset(currentDataset)
                       ? '🗝️ セーブしてホームに戻る'
                       : '🗝️ ホームに戻る'}
                   </span>
