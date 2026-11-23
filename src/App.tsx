@@ -13,6 +13,8 @@ import { downloadStandaloneBackupHtml } from './utils/exportStandaloneHtml';
 import {
   playRadioButtonSfx,
   RADIO_POWER_WARMUP_MS,
+  setRadioButtonSfxEnabled,
+  stopActivePowerOnNoise,
 } from './utils/radioSfx';
 import {
   exportReviewToBase64Url,
@@ -147,7 +149,10 @@ export default function App() {
     ),
     pos: 0,
   }));
-  const [isRadioOn, setIsRadioOn] = useState<boolean>(true);
+  const [isRadioOn, setIsRadioOn] = useState<boolean>(false);
+  const [hasRadioBeenActivated, setHasRadioBeenActivated] =
+    useState<boolean>(false);
+  const [isSfxEnabled, setIsSfxEnabled] = useState<boolean>(true);
   const [isRadioWarmingUp, setIsRadioWarmingUp] = useState<boolean>(false);
   const [isRadioPoweringOff, setIsRadioPoweringOff] = useState<boolean>(false);
   const [bgmNeedsGesture, setBgmNeedsGesture] = useState<boolean>(false);
@@ -246,6 +251,7 @@ export default function App() {
         return prev;
       });
       setIsRadioOn(true);
+      setHasRadioBeenActivated(true);
       setShowBgmMenu(false);
     },
     [clearCustomBgm]
@@ -259,6 +265,7 @@ export default function App() {
     customBgmUrlRef.current = objectUrl;
     setCustomBgm({ name: file.name, url: objectUrl });
     setIsRadioOn(true);
+    setHasRadioBeenActivated(true);
     setShowBgmMenu(false);
   }, []);
 
@@ -339,17 +346,34 @@ export default function App() {
     []
   );
 
+  const handleToggleSfxDial = useCallback(() => {
+    const next = !isSfxEnabled;
+    setRadioButtonSfxEnabled(next);
+    setIsSfxEnabled(next);
+    playRadioButtonSfx('dial');
+  }, [isSfxEnabled]);
+
   const handleToggleRadioPower = useCallback(() => {
     const audio = bgmAudioRef.current;
 
     if (isRadioOn && !isRadioPoweringOff) {
-      // Turning OFF: play vintage "プスッ..." sound while quickly fading out audio, then cut power
+      // Turning OFF: play vintage "プスッ..." sound when SFX enabled, then cut power
       cancelPowerTimersAndFade();
       setIsRadioWarmingUp(false);
-      setIsRadioPoweringOff(true);
       setBgmNeedsGesture(false);
       playRadioButtonSfx('power_off');
 
+      if (!isSfxEnabled) {
+        if (audio) {
+          audio.muted = true;
+          audio.pause();
+        }
+        setIsRadioPoweringOff(false);
+        setIsRadioOn(false);
+        return;
+      }
+
+      setIsRadioPoweringOff(true);
       if (audio && !audio.paused) {
         fadeAudioVolume(audio, audio.volume, 0, 100, () => {
           audio.muted = true;
@@ -368,12 +392,27 @@ export default function App() {
       return;
     }
 
-    // Turning ON: play vintage "パチッパチパチパチ。。。" crackle first, then fade in music
+    // Turning ON: play switch click + 1s Noise 3/4 crackle when SFX enabled, otherwise start immediately
     cancelPowerTimersAndFade();
     setIsRadioPoweringOff(false);
     setIsRadioOn(true);
-    setIsRadioWarmingUp(true);
+    setHasRadioBeenActivated(true);
     playRadioButtonSfx('power_on');
+
+    if (!isSfxEnabled) {
+      setIsRadioWarmingUp(false);
+      if (audio) {
+        audio.muted = false;
+        audio.volume = 0.45;
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => setBgmNeedsGesture(true));
+        }
+      }
+      return;
+    }
+
+    setIsRadioWarmingUp(true);
 
     if (audio) {
       // Keep audio unlocked inside the user click gesture while muted during tube warm-up
@@ -389,7 +428,13 @@ export default function App() {
       powerWarmupTimerRef.current = null;
       setIsRadioWarmingUp(false);
     }, RADIO_POWER_WARMUP_MS);
-  }, [isRadioOn, isRadioPoweringOff, cancelPowerTimersAndFade, fadeAudioVolume]);
+  }, [
+    isRadioOn,
+    isRadioPoweringOff,
+    isSfxEnabled,
+    cancelPowerTimersAndFade,
+    fadeAudioVolume,
+  ]);
 
   const handleUnlockBgmAudio = useCallback(() => {
     const audio = bgmAudioRef.current;
@@ -468,6 +513,7 @@ export default function App() {
   useEffect(() => {
     return () => {
       cancelPowerTimersAndFade();
+      stopActivePowerOnNoise();
       if (customVideoUrlRef.current) {
         URL.revokeObjectURL(customVideoUrlRef.current);
         customVideoUrlRef.current = null;
@@ -633,12 +679,20 @@ export default function App() {
           }
           return true;
         });
+      } else if (nextBuffer.endsWith('esc')) {
+        keyBufferRef.current = '';
+        if (isTestMode) {
+          exitTestMode();
+        } else if (showSecretInput) {
+          setShowSecretInput(false);
+          setSecretDraft('');
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [showMessage]);
+  }, [showMessage, isTestMode, showSecretInput, exitTestMode]);
 
   useEffect(() => {
     if (!isTestMode) return;
@@ -1286,6 +1340,25 @@ export default function App() {
           </div>
         )}
 
+        {/* Persistent Antique Radio at the top across all views */}
+        <div className="mb-6 sm:mb-8">
+          <AntiqueRadioPlayer
+            tracks={bgmTracks}
+            currentIndex={activeTrackOriginalIndex}
+            isOn={isRadioOn}
+            needsGesture={bgmNeedsGesture}
+            onPrev={handlePrevBgm}
+            onNext={handleNextBgm}
+            onTogglePower={handleToggleRadioPower}
+            onUnlockAudio={handleUnlockBgmAudio}
+            customTrackName={isTestMode && customBgm ? customBgm.name : null}
+            showTrackNumber={isTestMode}
+            hasBeenTurnedOn={hasRadioBeenActivated}
+            isSfxEnabled={isSfxEnabled}
+            onToggleSfx={handleToggleSfxDial}
+          />
+        </div>
+
         {/* VIEW 1: HOME */}
         {viewMode === 'home' && (
           <div className="space-y-8 animate-fadeIn">
@@ -1314,11 +1387,19 @@ export default function App() {
                     onChange={(e) => {
                       const val = e.target.value;
                       setSecretDraft(val);
-                      if (val.trim().toLowerCase() === 'test') {
+                      const normalized = val.trim().toLowerCase();
+                      if (normalized === 'test') {
                         setIsTestMode(true);
                         setShowSecretInput(false);
                         setSecretDraft('');
                         showMessage('✦ テストモードに切り替えました。');
+                      } else if (normalized === 'esc') {
+                        if (isTestMode) {
+                          exitTestMode();
+                        } else {
+                          setShowSecretInput(false);
+                          setSecretDraft('');
+                        }
                       }
                     }}
                     onKeyDown={(e) => {
@@ -1332,19 +1413,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            <AntiqueRadioPlayer
-              tracks={bgmTracks}
-              currentIndex={activeTrackOriginalIndex}
-              isOn={isRadioOn}
-              needsGesture={bgmNeedsGesture}
-              onPrev={handlePrevBgm}
-              onNext={handleNextBgm}
-              onTogglePower={handleToggleRadioPower}
-              onUnlockAudio={handleUnlockBgmAudio}
-              customTrackName={isTestMode && customBgm ? customBgm.name : null}
-              showTrackNumber={isTestMode}
-            />
 
             {currentFolder === 'practice_set_1_2' ? (
               <div className="grid grid-cols-1 gap-6">
@@ -1554,7 +1622,7 @@ export default function App() {
                   </div>
                   <p className="text-xs sm:text-sm text-[#a69a8c] leading-relaxed">
                     現在の全収録問題（全 {totalAllQuestions}{' '}
-                    問・図解含む）を1つのHTMLファイルとして保存できます。問題画面では番号移動・全問数の変更も可能です（Escキーで通常モードに戻ります）。
+                    問・図解含む）を1つのHTMLファイルとして保存できます。問題画面では番号移動・全問数の変更も可能です（Escキーまたは "esc" 入力で通常モードに戻ります）。
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 shrink-0">

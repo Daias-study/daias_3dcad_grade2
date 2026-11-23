@@ -806,8 +806,15 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
     }
 
     function handleSecretInput(val) {
-      if (String(val || '').trim().toLowerCase() === 'test') {
+      const normalized = String(val || '').trim().toLowerCase();
+      if (normalized === 'test') {
         enterTestMode();
+      } else if (normalized === 'esc') {
+        if (isTestMode) {
+          exitTestMode();
+        } else {
+          closeSecretInput();
+        }
       }
     }
 
@@ -852,6 +859,13 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       if (keyBuffer.endsWith('test')) {
         keyBuffer = '';
         enterTestMode();
+      } else if (keyBuffer.endsWith('esc')) {
+        keyBuffer = '';
+        if (isTestMode) {
+          exitTestMode();
+        } else {
+          closeSecretInput();
+        }
       }
     }, true);
 

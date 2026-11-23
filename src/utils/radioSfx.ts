@@ -1,9 +1,53 @@
-export type RadioSfxKind = 'prev' | 'next' | 'power_on' | 'power_off';
+export type RadioSfxKind =
+  | 'prev'
+  | 'next'
+  | 'power_on'
+  | 'power_off'
+  | 'dial'
+  | 'glass_tap';
 
-export const RADIO_POWER_WARMUP_MS = 780;
+// Switch-on click (~45ms) followed by 1.0s of Noise 3 or Noise 4 scratch crackle
+export const RADIO_POWER_WARMUP_MS = 1045;
+
+const BASE = import.meta.env.BASE_URL;
+const POWER_ON_NOISE_URLS = [
+  `${BASE}assets/sfx/radio_noise_3.mp3`,
+  `${BASE}assets/sfx/radio_noise_4.mp3`,
+] as const;
+const DIAL_SFX_URL = `${BASE}assets/sfx/radio_dial_snap.wav`;
+
+const SWITCH_CLICK_LEAD_SEC = 0.045;
+const SCRATCH_NOISE_DURATION_SEC = 1.0;
 
 let sharedAudioCtx: AudioContext | null = null;
 let cachedNoiseBuffer: AudioBuffer | null = null;
+
+const rawNoisePromises: Array<Promise<ArrayBuffer | null> | null> = [null, null];
+const rawNoiseBuffers: Array<ArrayBuffer | null> = [null, null];
+const decodedNoiseBuffers: Array<AudioBuffer | null> = [null, null];
+
+let rawDialPromise: Promise<ArrayBuffer | null> | null = null;
+let rawDialBuffer: ArrayBuffer | null = null;
+let decodedDialBuffer: AudioBuffer | null = null;
+
+let activeNoiseSource: AudioBufferSourceNode | null = null;
+let activeNoiseAudio: HTMLAudioElement | null = null;
+let activeNoiseFallbackTimer: number | null = null;
+let activeDialSource: AudioBufferSourceNode | null = null;
+let activeDialAudio: HTMLAudioElement | null = null;
+let powerOnSessionId = 0;
+let buttonSfxEnabled = true;
+
+export function setRadioButtonSfxEnabled(enabled: boolean): void {
+  buttonSfxEnabled = enabled;
+  if (!enabled) {
+    stopActivePowerOnNoise();
+  }
+}
+
+export function isRadioButtonSfxEnabled(): boolean {
+  return buttonSfxEnabled;
+}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -20,6 +64,197 @@ function getAudioContext(): AudioContext | null {
     sharedAudioCtx.resume().catch(() => {});
   }
   return sharedAudioCtx;
+}
+
+function fetchRawNoise(index: 0 | 1): Promise<ArrayBuffer | null> {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    return Promise.resolve(null);
+  }
+  if (rawNoiseBuffers[index]) {
+    return Promise.resolve(rawNoiseBuffers[index]);
+  }
+  if (!rawNoisePromises[index]) {
+    rawNoisePromises[index] = fetch(POWER_ON_NOISE_URLS[index])
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .then((buf) => {
+        if (buf) {
+          rawNoiseBuffers[index] = buf;
+        }
+        return buf;
+      })
+      .catch(() => null);
+  }
+  return rawNoisePromises[index]!;
+}
+
+async function getDecodedNoiseBuffer(
+  ctx: AudioContext,
+  index: 0 | 1
+): Promise<AudioBuffer | null> {
+  const existing = decodedNoiseBuffers[index];
+  if (existing && existing.sampleRate === ctx.sampleRate) {
+    return existing;
+  }
+  const raw = await fetchRawNoise(index);
+  if (!raw) return null;
+  try {
+    // Pass a copy because decodeAudioData detaches the ArrayBuffer
+    const decoded = await ctx.decodeAudioData(raw.slice(0));
+    decodedNoiseBuffers[index] = decoded;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function fetchRawDial(): Promise<ArrayBuffer | null> {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    return Promise.resolve(null);
+  }
+  if (rawDialBuffer) {
+    return Promise.resolve(rawDialBuffer);
+  }
+  if (!rawDialPromise) {
+    rawDialPromise = fetch(DIAL_SFX_URL)
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .then((buf) => {
+        if (buf) {
+          rawDialBuffer = buf;
+        }
+        return buf;
+      })
+      .catch(() => null);
+  }
+  return rawDialPromise;
+}
+
+async function getDecodedDialBuffer(
+  ctx: AudioContext
+): Promise<AudioBuffer | null> {
+  if (decodedDialBuffer && decodedDialBuffer.sampleRate === ctx.sampleRate) {
+    return decodedDialBuffer;
+  }
+  const raw = await fetchRawDial();
+  if (!raw) return null;
+  try {
+    const decoded = await ctx.decodeAudioData(raw.slice(0));
+    decodedDialBuffer = decoded;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+export function preloadRadioNoiseSfx(): void {
+  if (typeof window === 'undefined') return;
+  void fetchRawNoise(0);
+  void fetchRawNoise(1);
+  void fetchRawDial();
+}
+
+// Start prefetching lightweight scratch noise and dial snap clips immediately
+if (typeof window !== 'undefined') {
+  preloadRadioNoiseSfx();
+}
+
+export function stopActivePowerOnNoise(): void {
+  powerOnSessionId += 1;
+  if (activeNoiseFallbackTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(activeNoiseFallbackTimer);
+    activeNoiseFallbackTimer = null;
+  }
+  if (activeNoiseSource) {
+    try {
+      activeNoiseSource.stop();
+      activeNoiseSource.disconnect();
+    } catch {
+      // Already stopped
+    }
+    activeNoiseSource = null;
+  }
+  if (activeNoiseAudio) {
+    try {
+      activeNoiseAudio.pause();
+      activeNoiseAudio.currentTime = 0;
+    } catch {
+      // Ignore cleanup errors
+    }
+    activeNoiseAudio = null;
+  }
+}
+
+function playPowerOnScratchNoise(
+  ctx: AudioContext,
+  clickTime: number
+): void {
+  stopActivePowerOnNoise();
+  const session = powerOnSessionId;
+  const noiseIndex: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
+
+  const startDecodedBuffer = (buf: AudioBuffer, scheduledAt: number) => {
+    if (session !== powerOnSessionId) return;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.85, scheduledAt);
+
+    src.connect(gain);
+    gain.connect(ctx.destination);
+
+    activeNoiseSource = src;
+    src.onended = () => {
+      if (activeNoiseSource === src) {
+        activeNoiseSource = null;
+      }
+      try {
+        gain.disconnect();
+      } catch {
+        // Ignore disconnect cleanup
+      }
+    };
+
+    const playDuration = Math.min(SCRATCH_NOISE_DURATION_SEC, buf.duration);
+    src.start(scheduledAt, 0, playDuration);
+  };
+
+  const cachedDecoded = decodedNoiseBuffers[noiseIndex];
+  if (cachedDecoded && cachedDecoded.sampleRate === ctx.sampleRate) {
+    startDecodedBuffer(cachedDecoded, clickTime + SWITCH_CLICK_LEAD_SEC);
+    return;
+  }
+
+  // Decode pre-fetched buffer (or fetch if first-click was instant), falling back to HTMLAudioElement if needed
+  const targetStartTime = clickTime + SWITCH_CLICK_LEAD_SEC;
+  getDecodedNoiseBuffer(ctx, noiseIndex).then((decoded) => {
+    if (session !== powerOnSessionId) return;
+    if (decoded) {
+      const safeStart = Math.max(ctx.currentTime + 0.002, targetStartTime);
+      startDecodedBuffer(decoded, safeStart);
+      return;
+    }
+
+    // Fallback to direct HTMLAudioElement playback if Web Audio decode failed
+    const delayMs = Math.max(0, (targetStartTime - ctx.currentTime) * 1000);
+    activeNoiseFallbackTimer = window.setTimeout(() => {
+      if (session !== powerOnSessionId) return;
+      const el = new Audio(POWER_ON_NOISE_URLS[noiseIndex]);
+      el.volume = 0.72;
+      activeNoiseAudio = el;
+      const p = el.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+      activeNoiseFallbackTimer = window.setTimeout(() => {
+        if (activeNoiseAudio === el) {
+          el.pause();
+          el.currentTime = 0;
+          activeNoiseAudio = null;
+        }
+        activeNoiseFallbackTimer = null;
+      }, SCRATCH_NOISE_DURATION_SEC * 1000);
+    }, delayMs);
+  });
 }
 
 function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
@@ -118,7 +353,6 @@ function triggerCracklePop(
   midFreq: number,
   gainPeak: number
 ) {
-  // Sharp high-frequency "パチッ" spark + warm mid-body "パ" snap
   triggerBrassClick(
     ctx,
     dest,
@@ -178,17 +412,153 @@ function triggerTunerWhisp(
   src.stop(startTime + duration + 0.025);
 }
 
+function triggerGlassTap(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // 1. Crisp fingertip/knuckle contact transient on thick glass surface
+  triggerBrassClick(ctx, dest, noiseBuffer, startTime, 2150, 2.3, 0.011, 0.42);
+  triggerBrassClick(
+    ctx,
+    dest,
+    noiseBuffer,
+    startTime + 0.001,
+    1250,
+    1.8,
+    0.016,
+    0.26
+  );
+
+  // 2. Primary thick glass dome/pane resonance ("コッ")
+  const primaryOsc = ctx.createOscillator();
+  const primaryGain = ctx.createGain();
+  primaryOsc.type = 'sine';
+  primaryOsc.frequency.setValueAtTime(1020, startTime);
+  primaryOsc.frequency.exponentialRampToValueAtTime(925, startTime + 0.055);
+  primaryGain.gain.setValueAtTime(0.0001, startTime);
+  primaryGain.gain.linearRampToValueAtTime(0.46, startTime + 0.0022);
+  primaryGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.062);
+  primaryOsc.connect(primaryGain);
+  primaryGain.connect(dest);
+  primaryOsc.start(startTime);
+  primaryOsc.stop(startTime + 0.075);
+
+  // 3. Secondary stiff glass plate overtone (dry ~1.67x mode for clear glass character without chime)
+  const overtoneOsc = ctx.createOscillator();
+  const overtoneGain = ctx.createGain();
+  overtoneOsc.type = 'sine';
+  overtoneOsc.frequency.setValueAtTime(1690, startTime);
+  overtoneOsc.frequency.exponentialRampToValueAtTime(1580, startTime + 0.04);
+  overtoneGain.gain.setValueAtTime(0.0001, startTime);
+  overtoneGain.gain.linearRampToValueAtTime(0.21, startTime + 0.0018);
+  overtoneGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.044);
+  overtoneOsc.connect(overtoneGain);
+  overtoneGain.connect(dest);
+  overtoneOsc.start(startTime);
+  overtoneOsc.stop(startTime + 0.055);
+
+  // 4. Subtle wooden/brass bezel mount damping underneath ("ツッ")
+  triggerWoodBody(ctx, dest, startTime, 235, 132, 0.036, 0.19, 480);
+}
+
+function playDialSnapClip(ctx: AudioContext, startTime: number): void {
+  if (activeDialSource) {
+    try {
+      activeDialSource.stop();
+      activeDialSource.disconnect();
+    } catch {
+      // Already stopped
+    }
+    activeDialSource = null;
+  }
+  if (activeDialAudio) {
+    try {
+      activeDialAudio.pause();
+      activeDialAudio.currentTime = 0;
+    } catch {
+      // Ignore cleanup errors
+    }
+    activeDialAudio = null;
+  }
+
+  const startBuffer = (buf: AudioBuffer, scheduledAt: number) => {
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.92, scheduledAt);
+
+    src.connect(gain);
+    gain.connect(ctx.destination);
+
+    activeDialSource = src;
+    src.onended = () => {
+      if (activeDialSource === src) {
+        activeDialSource = null;
+      }
+      try {
+        gain.disconnect();
+      } catch {
+        // Ignore disconnect cleanup
+      }
+    };
+    src.start(scheduledAt);
+  };
+
+  if (decodedDialBuffer && decodedDialBuffer.sampleRate === ctx.sampleRate) {
+    startBuffer(decodedDialBuffer, startTime);
+    return;
+  }
+
+  getDecodedDialBuffer(ctx).then((decoded) => {
+    if (decoded) {
+      startBuffer(decoded, Math.max(ctx.currentTime + 0.002, startTime));
+      return;
+    }
+    const el = new Audio(DIAL_SFX_URL);
+    el.volume = 0.85;
+    activeDialAudio = el;
+    const p = el.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {});
+    }
+  });
+}
+
 export function playRadioButtonSfx(kind: RadioSfxKind): void {
   try {
+    // Button sound effects (prev, next, power_on, power_off) are muted when the SFX dial is OFF.
+    // The dial toggle itself always plays the extracted mechanical latch clip when switched.
+    if (kind !== 'dial' && !buttonSfxEnabled) {
+      if (kind === 'power_off') {
+        stopActivePowerOnNoise();
+      }
+      return;
+    }
+
     const ctx = getAudioContext();
     if (!ctx) return;
 
     const now = ctx.currentTime + 0.002;
+
+    if (kind === 'dial') {
+      playDialSnapClip(ctx, now);
+      return;
+    }
+
     const noiseBuffer = getNoiseBuffer(ctx);
 
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.5, now);
     master.connect(ctx.destination);
+
+    if (kind === 'glass_tap') {
+      master.gain.setValueAtTime(0.62, now);
+      triggerGlassTap(ctx, master, noiseBuffer, now);
+      return;
+    }
 
     if (kind === 'prev' || kind === 'next') {
       const isNext = kind === 'next';
@@ -249,50 +619,14 @@ export function playRadioButtonSfx(kind: RadioSfxKind): void {
         0.26
       );
 
-      // 2. Tube warm-up crackling sequence ("パチッ パチパチパチ。。。") over ~750ms
-      const crackleTimeline: Array<[number, number, number, number]> = [
-        [0.09, 3150, 1080, 0.42],
-        [0.205, 3650, 1280, 0.36],
-        [0.295, 2550, 920, 0.44],
-        [0.375, 3900, 1380, 0.34],
-        [0.465, 2900, 1050, 0.38],
-        [0.565, 3450, 1180, 0.25],
-        [0.655, 2400, 880, 0.18],
-        [0.735, 3100, 1120, 0.1],
-      ];
-      for (const [dt, hf, mf, amp] of crackleTimeline) {
-        triggerCracklePop(ctx, master, noiseBuffer, now + dt, hf, mf, amp);
-      }
-
-      // 3. Soft rising analog tube static & warm transformer hum leading into music
-      triggerTunerWhisp(
-        ctx,
-        master,
-        noiseBuffer,
-        now + 0.07,
-        780,
-        1550,
-        0.72,
-        0.08,
-        1.5
-      );
-
-      const humOsc = ctx.createOscillator();
-      const humGain = ctx.createGain();
-      humOsc.type = 'sine';
-      humOsc.frequency.setValueAtTime(98, now + 0.05);
-      humOsc.frequency.exponentialRampToValueAtTime(120, now + 0.72);
-      humGain.gain.setValueAtTime(0.0001, now + 0.05);
-      humGain.gain.linearRampToValueAtTime(0.048, now + 0.28);
-      humGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
-      humOsc.connect(humGain);
-      humGain.connect(master);
-      humOsc.start(now + 0.05);
-      humOsc.stop(now + 0.82);
+      // 2. Immediately follow with 1 second of randomly chosen Noise 3 or Noise 4 radio scratch clip
+      playPowerOnScratchNoise(ctx, now);
       return;
     }
 
-    // power_off: Vintage toggle release + cozy "プスッ..." tube shutoff puff & capacitor drop
+    // power_off: cancel any active warm-up noise, then play "プスッ..." tube shutoff sound
+    stopActivePowerOnNoise();
+
     // 1. Switch release snap
     triggerWoodBody(ctx, master, now, 126, 48, 0.075, 0.34);
     triggerBrassClick(ctx, master, noiseBuffer, now, 1750, 2.2, 0.022, 0.28);
