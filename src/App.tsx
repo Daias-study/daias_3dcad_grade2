@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AntiqueRadioPlayer } from './components/AntiqueRadioPlayer';
 import { DiagramViewer } from './components/DiagramViewer';
+import { LearningAnalyticsView } from './components/LearningAnalyticsView';
 import { bgmTracks } from './data/bgmTracks';
 import { darkAcademiaLibraryScenes } from './data/libraryScenes';
 import { quizDatasets } from './data/quizDatasets';
 import type { QuizDataset, QuizQuestion, UserAnswer } from './types/quiz';
+import {
+  buildLearningAnalytics,
+  classifyQuestionGenre,
+  clearStudyHistory,
+  loadStudyHistory,
+  saveStudyHistory,
+  type StudyAttemptRecord,
+} from './utils/analyticsUtils';
 import {
   isQuestionCorrect,
   isSingleBlankCorrect,
@@ -12,7 +21,7 @@ import {
 import { downloadStandaloneBackupHtml } from './utils/exportStandaloneHtml';
 import {
   playRadioButtonSfx,
-  RADIO_POWER_WARMUP_MS,
+  playRadioPowerOnSfx,
   setRadioButtonSfxEnabled,
   stopActivePowerOnNoise,
 } from './utils/radioSfx';
@@ -23,7 +32,7 @@ import {
   mergeReviewQuestions,
 } from './utils/transferUtils';
 
-type ViewMode = 'home' | 'quiz' | 'result' | 'transfer';
+type ViewMode = 'home' | 'quiz' | 'result' | 'transfer' | 'analytics';
 
 const SCROLL_NUMBERS = ['壱', '弐', '参', '肆', '伍', '陸', '漆', '捌', '玖', '拾'];
 const REVIEW_STORAGE_KEY = 'daia_3dcad_review_questions_v1';
@@ -112,6 +121,9 @@ export default function App() {
   const [reviewQuestions, setReviewQuestions] = useState<QuizQuestion[]>(() =>
     loadStoredReviewQuestions()
   );
+  const [studyHistory, setStudyHistory] = useState<StudyAttemptRecord[]>(() =>
+    loadStudyHistory()
+  );
 
   const [fillDraft, setFillDraft] = useState<string>('');
   const [multiFillDrafts, setMultiFillDrafts] = useState<string[]>([]);
@@ -178,6 +190,7 @@ export default function App() {
   const multiInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const keyBufferRef = useRef<string>('');
+  const questionShownAtRef = useRef<number>(Date.now());
 
   const changeRandomLibraryBackground = useCallback(() => {
     let nextIndex: number;
@@ -205,6 +218,7 @@ export default function App() {
   const selectSceneByIndex = useCallback(
     (idx: number) => {
       if (idx < 0 || idx >= darkAcademiaLibraryScenes.length) return;
+      playRadioButtonSfx('ui_click');
       clearCustomVideo();
       lastBgIndexRef.current = idx;
       setSceneIndex(idx);
@@ -214,6 +228,7 @@ export default function App() {
   );
 
   const playCustomVideoFile = useCallback((file: File) => {
+    playRadioButtonSfx('ui_click');
     if (customVideoUrlRef.current) {
       URL.revokeObjectURL(customVideoUrlRef.current);
     }
@@ -242,6 +257,7 @@ export default function App() {
   const selectBgmByIndex = useCallback(
     (trackIdx: number) => {
       if (trackIdx < 0 || trackIdx >= bgmTracks.length) return;
+      playRadioButtonSfx('ui_click');
       clearCustomBgm();
       setBgmPlayback((prev) => {
         const foundPos = prev.order.indexOf(trackIdx);
@@ -392,14 +408,14 @@ export default function App() {
       return;
     }
 
-    // Turning ON: play switch click + 1s Noise 3/4 crackle when SFX enabled, otherwise start immediately
+    // Turning ON: play switch click + Noise 3/4 crackle (1s at 90%, 3s at 5%, 5s at 5%) when SFX enabled, otherwise start immediately
     cancelPowerTimersAndFade();
     setIsRadioPoweringOff(false);
     setIsRadioOn(true);
     setHasRadioBeenActivated(true);
-    playRadioButtonSfx('power_on');
+    const warmupMs = playRadioPowerOnSfx();
 
-    if (!isSfxEnabled) {
+    if (!isSfxEnabled || warmupMs <= 0) {
       setIsRadioWarmingUp(false);
       if (audio) {
         audio.muted = false;
@@ -427,7 +443,7 @@ export default function App() {
     powerWarmupTimerRef.current = window.setTimeout(() => {
       powerWarmupTimerRef.current = null;
       setIsRadioWarmingUp(false);
-    }, RADIO_POWER_WARMUP_MS);
+    }, warmupMs);
   }, [
     isRadioOn,
     isRadioPoweringOff,
@@ -627,6 +643,12 @@ export default function App() {
     }
   }, [viewMode, currentIndex, currentQuestion, savedAnswer, isAnswered]);
 
+  useEffect(() => {
+    if (viewMode === 'quiz' && currentQuestion) {
+      questionShownAtRef.current = Date.now();
+    }
+  }, [viewMode, currentIndex, currentDataset?.id, currentQuestion]);
+
   const maxQuestions = currentDataset?.questions.length ?? 0;
   const effectiveTotal =
     currentDataset && testQuestionLimit !== null
@@ -742,6 +764,7 @@ export default function App() {
   };
 
   const goToHome = (folderId: string | null = null) => {
+    playRadioButtonSfx('ui_page');
     setCurrentFolder(folderId);
     setViewMode('home');
     setShowSecretInput(false);
@@ -771,9 +794,11 @@ export default function App() {
   const startQuiz = (datasetId: string) => {
     if (datasetId === REVIEW_DATASET_ID) {
       if (reviewQuestions.length === 0) {
+        playRadioButtonSfx('ui_click');
         showMessage('まだ間違えた問題はありません。');
         return;
       }
+      playRadioButtonSfx('ui_page');
       startQuizWithDataset({
         id: REVIEW_DATASET_ID,
         isReview: true,
@@ -787,6 +812,7 @@ export default function App() {
 
     const dataset = quizDatasets.find((d) => d.id === datasetId);
     if (!dataset) return;
+    playRadioButtonSfx('ui_page');
     startQuizWithDataset(dataset);
   };
 
@@ -799,7 +825,27 @@ export default function App() {
     });
 
     const correct = isQuestionCorrect(answer, currentQuestion);
+    playRadioButtonSfx(correct ? 'quiz_correct' : 'quiz_wrong');
     const key = getQuestionKey(currentQuestion);
+    const durationSec = Math.max(
+      1,
+      Math.min(300, Math.round((Date.now() - questionShownAtRef.current) / 1000))
+    );
+    const attemptRecord: StudyAttemptRecord = {
+      questionKey: key,
+      datasetId: currentDataset?.id ?? 'unknown',
+      datasetTitle: currentDataset?.title ?? '',
+      genre: classifyQuestionGenre(currentQuestion),
+      isCorrect: correct,
+      durationSec,
+      timestamp: Date.now(),
+    };
+    setStudyHistory((prev) => {
+      const updated = [...prev, attemptRecord];
+      saveStudyHistory(updated);
+      return updated;
+    });
+
     if (!correct) {
       setReviewQuestions((prev) => {
         if (prev.some((item) => getQuestionKey(item) === key)) {
@@ -823,6 +869,7 @@ export default function App() {
   const handleFillSubmit = () => {
     const val = fillDraft.trim();
     if (!val) {
+      playRadioButtonSfx('ui_click');
       showMessage('空欄に用語を入力してください。');
       fillInputRef.current?.focus();
       return;
@@ -835,6 +882,7 @@ export default function App() {
     const vals = multiFillDrafts.map((v) => v.trim());
     const emptyIdx = vals.findIndex((v) => !v);
     if (emptyIdx !== -1) {
+      playRadioButtonSfx('ui_click');
       showMessage(
         `${currentQuestion.blanks[emptyIdx].label} の空欄に用語を入力してください。`
       );
@@ -847,6 +895,7 @@ export default function App() {
   const nextQuestion = () => {
     if (!currentDataset || !currentQuestion) return;
     if (!isAnswered) {
+      playRadioButtonSfx('ui_click');
       showMessage(
         currentQuestion.type === 'fill' || currentQuestion.type === 'multi_fill'
           ? '空欄に用語を入力して「解答する」を押してください。'
@@ -855,6 +904,7 @@ export default function App() {
       return;
     }
 
+    playRadioButtonSfx('ui_page');
     if (currentIndex < effectiveTotal - 1) {
       setCurrentIndex((prev) => prev + 1);
       changeRandomLibraryBackground();
@@ -868,6 +918,7 @@ export default function App() {
 
   const prevQuestion = () => {
     if (currentIndex > 0) {
+      playRadioButtonSfx('ui_page');
       setCurrentIndex((prev) => prev - 1);
       changeRandomLibraryBackground();
       scrollToTop();
@@ -963,6 +1014,7 @@ export default function App() {
 
   const retryQuiz = () => {
     if (!currentDataset) return;
+    playRadioButtonSfx('ui_page');
     if (currentDataset.id === REVIEW_DATASET_ID) {
       startQuiz(REVIEW_DATASET_ID);
       return;
@@ -982,8 +1034,13 @@ export default function App() {
     (sum, d) => sum + d.questions.length,
     0
   );
+  const analyticsSummary = useMemo(
+    () => buildLearningAnalytics(quizDatasets, reviewQuestions, studyHistory),
+    [reviewQuestions, studyHistory]
+  );
 
   const handleDownloadBackup = () => {
+    playRadioButtonSfx('ui_click');
     const filename = downloadStandaloneBackupHtml(quizDatasets);
     showMessage(
       `✦ ${filename} を保存しました（ダブルクリックでそのまま開けます）`
@@ -1022,6 +1079,7 @@ export default function App() {
 
   const retryIncorrectOnly = () => {
     if (!currentDataset || incorrectQuestions.length === 0) return;
+    playRadioButtonSfx('ui_page');
     const isReview = isReviewSessionDataset(currentDataset);
     const retryDataset: QuizDataset = {
       id: `retry_incorrect_${Date.now()}`,
@@ -1153,6 +1211,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    playRadioButtonSfx('ui_click');
                     setShowBgmMenu(false);
                     setShowSceneMenu((prev) => !prev);
                   }}
@@ -1223,7 +1282,10 @@ export default function App() {
                     />
                     <button
                       type="button"
-                      onClick={() => customVideoInputRef.current?.click()}
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        customVideoInputRef.current?.click();
+                      }}
                       className="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] border border-[#c5a059]/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <span>📁 任意の動画ファイルを選択</span>
@@ -1238,6 +1300,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    playRadioButtonSfx('ui_click');
                     setShowSceneMenu(false);
                     setShowBgmMenu((prev) => !prev);
                   }}
@@ -1309,7 +1372,10 @@ export default function App() {
                       />
                       <button
                         type="button"
-                        onClick={() => customBgmInputRef.current?.click()}
+                        onClick={() => {
+                          playRadioButtonSfx('ui_click');
+                          customBgmInputRef.current?.click();
+                        }}
                         className="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] border border-[#c5a059]/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <span>📁 任意の音声/動画ファイルを選択</span>
@@ -1365,7 +1431,10 @@ export default function App() {
             <div className="text-center space-y-3 mb-4">
               <button
                 type="button"
-                onClick={() => setShowSecretInput((prev) => !prev)}
+                onClick={() => {
+                  playRadioButtonSfx('ui_click');
+                  setShowSecretInput((prev) => !prev);
+                }}
                 className="inline-block text-xs tracking-[0.2em] uppercase px-4 py-1 bg-[#261829] text-[#d4af37] font-semibold rounded-full border border-[#c5a059]/40 cursor-pointer hover:border-[#ffd700] transition"
               >
                 ✦ ようこそ ✦
@@ -1469,6 +1538,7 @@ export default function App() {
                 {/* データ引継ぎカード（1番目） */}
                 <div
                   onClick={() => {
+                    playRadioButtonSfx('ui_page');
                     setTransferImportDraft('');
                     setConfirmResetData(false);
                     setViewMode('transfer');
@@ -1501,7 +1571,44 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* 復習問題集カード（2番目） */}
+                {/* 学習データ分析カード（2番目：データ引継ぎの直下） */}
+                <div
+                  onClick={() => {
+                    playRadioButtonSfx('ui_page');
+                    setViewMode('analytics');
+                    changeRandomLibraryBackground();
+                    scrollToTop();
+                  }}
+                  className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                        御試みの書 弐
+                      </span>
+                      <span className="text-xs text-[#d4af37] font-bold tracking-wider">
+                        習得率 {analyticsSummary.learnedPercent}%
+                        {analyticsSummary.avgAccuracyPercent !== null
+                          ? ` ／ 平均正解率 ${analyticsSummary.avgAccuracyPercent}%`
+                          : ' ／ 7種グラフ収録'}
+                      </span>
+                    </div>
+                    <h3 className="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                      学習データ分析
+                    </h3>
+                    <p className="text-sm text-[#a69a8c] leading-relaxed">
+                      覚えた割合や平均正誤率、得意・苦手ジャンルに加え、棒グラフ・折れ線・円/帯・積み上げ棒・散布図・ヒストグラム/箱ひげ図・レーダーチャートの7種で学習記録を分析します。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0 cursor-pointer"
+                  >
+                    <span>分析を開く ▶</span>
+                  </button>
+                </div>
+
+                {/* 復習問題集カード（3番目） */}
                 <div
                   onClick={() => startQuiz(REVIEW_DATASET_ID)}
                   className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
@@ -1509,7 +1616,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2.5">
                       <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
-                        御試みの書 弐
+                        御試みの書 参
                       </span>
                       <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                         全 {reviewQuestions.length} 問収録
@@ -1541,6 +1648,7 @@ export default function App() {
                 {/* 演習問題集フォルダカード */}
                 <div
                   onClick={() => {
+                    playRadioButtonSfx('ui_page');
                     setCurrentFolder('practice_set_1_2');
                     changeRandomLibraryBackground();
                     scrollToTop();
@@ -1550,7 +1658,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2.5">
                       <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
-                        御試みの書 参
+                        御試みの書 肆
                       </span>
                       <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                         演習問題数：全 {totalGroupedQuestions} 問収録（
@@ -1575,7 +1683,7 @@ export default function App() {
                 {/* その他の独立ファイル */}
                 {standaloneDatasets.map((dataset, idx) => {
                   const scrollLabel =
-                    SCROLL_NUMBERS[idx + 3] ?? String(idx + 4);
+                    SCROLL_NUMBERS[idx + 4] ?? String(idx + 5);
                   return (
                     <div
                       key={dataset.id}
@@ -2129,6 +2237,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={async () => {
+                      playRadioButtonSfx('ui_click');
                       const code = exportReviewToBase64Url(
                         reviewQuestions,
                         quizDatasets
@@ -2152,6 +2261,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={async () => {
+                      playRadioButtonSfx('ui_click');
                       const code = exportReviewToBase64Url(
                         reviewQuestions,
                         quizDatasets
@@ -2193,6 +2303,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      playRadioButtonSfx('ui_click');
                       try {
                         const imported = importReviewFromBase64Url(
                           transferImportDraft,
@@ -2217,6 +2328,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      playRadioButtonSfx('ui_click');
                       try {
                         const imported = importReviewFromBase64Url(
                           transferImportDraft,
@@ -2251,7 +2363,10 @@ export default function App() {
                 <div className="flex justify-center pt-2">
                   <button
                     type="button"
-                    onClick={() => setConfirmResetData(true)}
+                    onClick={() => {
+                      playRadioButtonSfx('ui_click');
+                      setConfirmResetData(true);
+                    }}
                     className="px-6 py-3 rounded-xl border border-rose-500/60 bg-[#261117] hover:bg-[#3a1822] text-rose-200 font-bold text-sm shadow-lg transition cursor-pointer"
                   >
                     🗑️ データを初期化
@@ -2261,12 +2376,16 @@ export default function App() {
                 <div className="bg-[#261117]/90 border border-rose-500/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
                   <p className="text-xs sm:text-sm text-rose-200 font-semibold">
                     保存されている復習問題データ（全 {reviewQuestions.length}{' '}
-                    問）をすべて消去して初期化しますか？
+                    問）および学習分析履歴（{studyHistory.length}{' '}
+                    件）をすべて消去して初期化しますか？
                   </p>
                   <div className="flex items-center gap-3 shrink-0">
                     <button
                       type="button"
-                      onClick={() => setConfirmResetData(false)}
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        setConfirmResetData(false);
+                      }}
                       className="px-4 py-2 rounded-lg border border-[#c5a059]/40 bg-[#1c1622] hover:bg-[#2c2236] text-[#e6dfd3] text-xs font-bold transition cursor-pointer"
                     >
                       キャンセル
@@ -2274,8 +2393,11 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
+                        playRadioButtonSfx('ui_click');
                         setReviewQuestions([]);
                         saveStoredReviewQuestions([]);
+                        setStudyHistory([]);
+                        clearStudyHistory();
                         try {
                           window.localStorage.removeItem(REVIEW_STORAGE_KEY);
                         } catch {
@@ -2294,6 +2416,14 @@ export default function App() {
               )}
             </div>
           </div>
+        )}
+
+        {/* VIEW 5: LEARNING ANALYTICS SCREEN */}
+        {viewMode === 'analytics' && (
+          <LearningAnalyticsView
+            summary={analyticsSummary}
+            onGoHome={() => goToHome(null)}
+          />
         )}
       </main>
 

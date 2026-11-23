@@ -227,7 +227,10 @@ export function AntiqueRadioPlayer({
           {/* Left Album Jacket Window (Always clickable ON or pitch-black OFF; no yellow hover border) */}
           <button
             type="button"
-            onClick={() => setIsJacketZoomed(true)}
+            onClick={() => {
+              playRadioButtonSfx('jacket_open');
+              setIsJacketZoomed(true);
+            }}
             title="ラジオを拡大表示"
             aria-label="ラジオを拡大表示"
             className="absolute overflow-hidden bg-black transition-all duration-300 shadow-[inset_0_0_12px_rgba(0,0,0,0.95)] p-0 border-0 focus:outline-none cursor-pointer"
@@ -420,7 +423,10 @@ export function AntiqueRadioPlayer({
         <div className="mt-2 flex items-center justify-center">
           <button
             type="button"
-            onClick={onUnlockAudio}
+            onClick={() => {
+              playRadioButtonSfx('ui_click');
+              onUnlockAudio();
+            }}
             className="px-3.5 py-1.5 rounded-md bg-[#3a1c24]/90 hover:bg-[#522531] text-[#f3e5ab] border border-[#d4af37]/70 text-xs font-bold transition cursor-pointer animate-pulse shadow-lg"
           >
             🔊 クリックして音を鳴らす
@@ -436,7 +442,10 @@ export function AntiqueRadioPlayer({
             role="dialog"
             aria-modal="true"
             aria-label="ジャケット拡大表示"
-            onClick={() => setIsJacketZoomed(false)}
+            onClick={() => {
+              playRadioButtonSfx('glass_tap');
+              setIsJacketZoomed(false);
+            }}
             className="fixed inset-0 z-50 bg-[#1a0f08] flex items-center justify-center overflow-hidden select-none animate-fadeIn"
           >
             {/* Full-bleed matching antique walnut wood wall filling 100% of any viewport ratio */}

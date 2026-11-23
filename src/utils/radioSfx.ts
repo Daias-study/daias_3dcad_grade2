@@ -4,9 +4,14 @@ export type RadioSfxKind =
   | 'power_on'
   | 'power_off'
   | 'dial'
-  | 'glass_tap';
+  | 'glass_tap'
+  | 'jacket_open'
+  | 'ui_page'
+  | 'ui_click'
+  | 'quiz_correct'
+  | 'quiz_wrong';
 
-// Switch-on click (~45ms) followed by 1.0s of Noise 3 or Noise 4 scratch crackle
+// Switch-on click (~45ms) followed by 1.0s (90%), 3.0s (5%), or 5.0s (5%) of Noise 3 or Noise 4 scratch crackle
 export const RADIO_POWER_WARMUP_MS = 1045;
 
 const BASE = import.meta.env.BASE_URL;
@@ -17,7 +22,14 @@ const POWER_ON_NOISE_URLS = [
 const DIAL_SFX_URL = `${BASE}assets/sfx/radio_dial_snap.wav`;
 
 const SWITCH_CLICK_LEAD_SEC = 0.045;
-const SCRATCH_NOISE_DURATION_SEC = 1.0;
+const DEFAULT_SCRATCH_NOISE_DURATION_SEC = 1.0;
+
+export function rollPowerOnNoiseDurationSec(): 1 | 3 | 5 {
+  const roll = Math.random();
+  if (roll < 0.05) return 5;
+  if (roll < 0.10) return 3;
+  return 1;
+}
 
 let sharedAudioCtx: AudioContext | null = null;
 let cachedNoiseBuffer: AudioBuffer | null = null;
@@ -185,7 +197,8 @@ export function stopActivePowerOnNoise(): void {
 
 function playPowerOnScratchNoise(
   ctx: AudioContext,
-  clickTime: number
+  clickTime: number,
+  noiseDurationSec: number = DEFAULT_SCRATCH_NOISE_DURATION_SEC
 ): void {
   stopActivePowerOnNoise();
   const session = powerOnSessionId;
@@ -196,8 +209,24 @@ function playPowerOnScratchNoise(
     const src = ctx.createBufferSource();
     src.buffer = buf;
 
+    const needsLoop = noiseDurationSec > buf.duration;
+    if (needsLoop) {
+      const trimEdge = Math.min(0.05, buf.duration * 0.1);
+      src.loop = true;
+      src.loopStart = trimEdge;
+      src.loopEnd = Math.max(trimEdge + 0.2, buf.duration - trimEdge);
+    }
+
+    const playDuration = needsLoop
+      ? noiseDurationSec
+      : Math.min(noiseDurationSec, buf.duration);
+    const endAt = scheduledAt + playDuration;
+    const fadeTailStart = Math.max(scheduledAt, endAt - 0.035);
+
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.85, scheduledAt);
+    gain.gain.setValueAtTime(0.85, fadeTailStart);
+    gain.gain.linearRampToValueAtTime(0.0001, endAt);
 
     src.connect(gain);
     gain.connect(ctx.destination);
@@ -214,7 +243,6 @@ function playPowerOnScratchNoise(
       }
     };
 
-    const playDuration = Math.min(SCRATCH_NOISE_DURATION_SEC, buf.duration);
     src.start(scheduledAt, 0, playDuration);
   };
 
@@ -240,6 +268,7 @@ function playPowerOnScratchNoise(
       if (session !== powerOnSessionId) return;
       const el = new Audio(POWER_ON_NOISE_URLS[noiseIndex]);
       el.volume = 0.72;
+      el.loop = noiseDurationSec > 1;
       activeNoiseAudio = el;
       const p = el.play();
       if (p && typeof p.catch === 'function') {
@@ -252,7 +281,7 @@ function playPowerOnScratchNoise(
           activeNoiseAudio = null;
         }
         activeNoiseFallbackTimer = null;
-      }, SCRATCH_NOISE_DURATION_SEC * 1000);
+      }, noiseDurationSec * 1000);
     }, delayMs);
   });
 }
@@ -463,6 +492,140 @@ function triggerGlassTap(
   triggerWoodBody(ctx, dest, startTime, 235, 132, 0.036, 0.19, 480);
 }
 
+function triggerJacketOpen(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // Tactile glass + brass shutter unlatch when zooming into the CRT jacket window
+  triggerWoodBody(ctx, dest, startTime, 175, 88, 0.055, 0.28, 460);
+  triggerBrassClick(ctx, dest, noiseBuffer, startTime, 1950, 2.5, 0.016, 0.3);
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(760, startTime + 0.008);
+  osc.frequency.exponentialRampToValueAtTime(1040, startTime + 0.068);
+  gain.gain.setValueAtTime(0.0001, startTime + 0.008);
+  gain.gain.linearRampToValueAtTime(0.24, startTime + 0.014);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.078);
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(startTime + 0.008);
+  osc.stop(startTime + 0.09);
+}
+
+function triggerParchmentPageTurn(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // Soft leather tome tap + warm crisp parchment paper brush
+  triggerWoodBody(ctx, dest, startTime, 142, 74, 0.048, 0.24, 380);
+  triggerTunerWhisp(
+    ctx,
+    dest,
+    noiseBuffer,
+    startTime + 0.006,
+    1800,
+    3100,
+    0.072,
+    0.16,
+    1.2
+  );
+  triggerBrassClick(
+    ctx,
+    dest,
+    noiseBuffer,
+    startTime + 0.012,
+    2400,
+    2.2,
+    0.014,
+    0.14
+  );
+}
+
+function triggerAntiqueUiClick(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // Delicate brass clasp / antique fountain-pen detent click
+  triggerWoodBody(ctx, dest, startTime, 165, 84, 0.038, 0.24, 420);
+  triggerBrassClick(ctx, dest, noiseBuffer, startTime, 2350, 2.8, 0.014, 0.28);
+  triggerBrassClick(
+    ctx,
+    dest,
+    noiseBuffer,
+    startTime + 0.014,
+    3150,
+    3.2,
+    0.011,
+    0.12
+  );
+}
+
+function triggerScholarChime(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // Subtle parchment-desk tap followed by a warm antique brass/celesta two-note fifth (A4 -> E5)
+  triggerBrassClick(ctx, dest, noiseBuffer, startTime, 2100, 2.6, 0.012, 0.16);
+
+  const playNote = (freq: number, at: number, dur: number, vol: number) => {
+    const osc = ctx.createOscillator();
+    const harm = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, at);
+    harm.type = 'triangle';
+    harm.frequency.setValueAtTime(freq * 2, at);
+
+    const harmGain = ctx.createGain();
+    harmGain.gain.setValueAtTime(0.18, at);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2400, at);
+
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(vol, at + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+
+    osc.connect(filter);
+    harm.connect(harmGain);
+    harmGain.connect(filter);
+    filter.connect(gain);
+    gain.connect(dest);
+
+    osc.start(at);
+    harm.start(at);
+    osc.stop(at + dur + 0.02);
+    harm.stop(at + dur + 0.02);
+  };
+
+  playNote(440, startTime + 0.004, 0.22, 0.28);
+  playNote(659.25, startTime + 0.075, 0.29, 0.32);
+}
+
+function triggerWoodDullThud(
+  ctx: AudioContext,
+  dest: AudioNode,
+  noiseBuffer: AudioBuffer,
+  startTime: number
+): void {
+  // Soft damped walnut desk thud + muted felt tap (gentle, non-jarring)
+  triggerWoodBody(ctx, dest, startTime, 152, 84, 0.085, 0.34, 340);
+  triggerWoodBody(ctx, dest, startTime + 0.068, 124, 68, 0.095, 0.26, 280);
+  triggerBrassClick(ctx, dest, noiseBuffer, startTime, 820, 1.5, 0.018, 0.16);
+}
+
 function playDialSnapClip(ctx: AudioContext, startTime: number): void {
   if (activeDialSource) {
     try {
@@ -527,7 +690,26 @@ function playDialSnapClip(ctx: AudioContext, startTime: number): void {
   });
 }
 
+export function playRadioPowerOnSfx(): number {
+  const noiseDurationSec = rollPowerOnNoiseDurationSec();
+  if (!buttonSfxEnabled) {
+    return 0;
+  }
+  playRadioButtonSfxWithPowerDuration('power_on', noiseDurationSec);
+  return Math.round((SWITCH_CLICK_LEAD_SEC + noiseDurationSec) * 1000);
+}
+
 export function playRadioButtonSfx(kind: RadioSfxKind): void {
+  playRadioButtonSfxWithPowerDuration(
+    kind,
+    kind === 'power_on' ? rollPowerOnNoiseDurationSec() : DEFAULT_SCRATCH_NOISE_DURATION_SEC
+  );
+}
+
+function playRadioButtonSfxWithPowerDuration(
+  kind: RadioSfxKind,
+  powerOnNoiseDurationSec: number
+): void {
   try {
     // Button sound effects (prev, next, power_on, power_off) are muted when the SFX dial is OFF.
     // The dial toggle itself always plays the extracted mechanical latch clip when switched.
@@ -557,6 +739,36 @@ export function playRadioButtonSfx(kind: RadioSfxKind): void {
     if (kind === 'glass_tap') {
       master.gain.setValueAtTime(0.62, now);
       triggerGlassTap(ctx, master, noiseBuffer, now);
+      return;
+    }
+
+    if (kind === 'jacket_open') {
+      master.gain.setValueAtTime(0.55, now);
+      triggerJacketOpen(ctx, master, noiseBuffer, now);
+      return;
+    }
+
+    if (kind === 'ui_page') {
+      master.gain.setValueAtTime(0.54, now);
+      triggerParchmentPageTurn(ctx, master, noiseBuffer, now);
+      return;
+    }
+
+    if (kind === 'ui_click') {
+      master.gain.setValueAtTime(0.48, now);
+      triggerAntiqueUiClick(ctx, master, noiseBuffer, now);
+      return;
+    }
+
+    if (kind === 'quiz_correct') {
+      master.gain.setValueAtTime(0.46, now);
+      triggerScholarChime(ctx, master, noiseBuffer, now);
+      return;
+    }
+
+    if (kind === 'quiz_wrong') {
+      master.gain.setValueAtTime(0.52, now);
+      triggerWoodDullThud(ctx, master, noiseBuffer, now);
       return;
     }
 
@@ -619,8 +831,8 @@ export function playRadioButtonSfx(kind: RadioSfxKind): void {
         0.26
       );
 
-      // 2. Immediately follow with 1 second of randomly chosen Noise 3 or Noise 4 radio scratch clip
-      playPowerOnScratchNoise(ctx, now);
+      // 2. Immediately follow with 1s (90%), 3s (5%), or 5s (5%) of randomly chosen Noise 3 or Noise 4 radio scratch clip
+      playPowerOnScratchNoise(ctx, now, powerOnNoiseDurationSec);
       return;
     }
 
