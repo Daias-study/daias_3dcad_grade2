@@ -64,4 +64,12 @@ export interface LibraryScene {
   url: string;
 }
 
+export interface BgmTrack {
+  id: string;
+  title: string;
+  subtitle: string;
+  audioUrl: string;
+  coverUrl: string;
+}
+
 export type UserAnswer = string | string[] | null;

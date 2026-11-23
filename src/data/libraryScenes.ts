@@ -43,4 +43,12 @@ export const darkAcademiaLibraryScenes: LibraryScene[] = [
     name: '肖像と胸像の赤絨毯回廊',
     url: `${BASE}assets/aistudio/Walking_through_indoor_hallway_42a540ac_395b156b.mp4`,
   },
+  {
+    name: '蔦とステンドグラスの古聖堂',
+    url: `${BASE}assets/aistudio/Walking_through_Gothic_cathedral_6a57eb86_9428921d.mp4`,
+  },
+  {
+    name: '燭光と大時計のゴシック回廊',
+    url: `${BASE}assets/aistudio/Wandering_dark_gothic_mansion_co__f76bb0f5_42e4fcc9.mp4`,
+  },
 ];

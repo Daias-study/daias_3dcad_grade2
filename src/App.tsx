@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AntiqueRadioPlayer } from './components/AntiqueRadioPlayer';
 import { DiagramViewer } from './components/DiagramViewer';
+import { bgmTracks } from './data/bgmTracks';
 import { darkAcademiaLibraryScenes } from './data/libraryScenes';
 import { quizDatasets } from './data/quizDatasets';
 import type { QuizDataset, QuizQuestion, UserAnswer } from './types/quiz';
@@ -8,6 +10,10 @@ import {
   isSingleBlankCorrect,
 } from './utils/answerUtils';
 import { downloadStandaloneBackupHtml } from './utils/exportStandaloneHtml';
+import {
+  playRadioButtonSfx,
+  RADIO_POWER_WARMUP_MS,
+} from './utils/radioSfx';
 import {
   exportReviewToBase64Url,
   getQuestionKey,
@@ -40,6 +46,61 @@ function saveStoredReviewQuestions(list: QuizQuestion[]): void {
   }
 }
 
+function getRandomInt(maxExclusive: number): number {
+  if (maxExclusive <= 1) return 0;
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    const arr = new Uint32Array(1);
+    window.crypto.getRandomValues(arr);
+    return arr[0] % maxExclusive;
+  }
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+function isSameOrder(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function createShuffledTrackOrder(
+  length: number,
+  avoidFirstIndex?: number,
+  avoidSameOrder?: number[]
+): number[] {
+  if (length <= 1) return length === 1 ? [0] : [];
+
+  const identity = Array.from({ length }, (_, i) => i);
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const order = [...identity];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = getRandomInt(i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    if (avoidFirstIndex !== undefined && order[0] === avoidFirstIndex) {
+      continue;
+    }
+    if (avoidSameOrder && isSameOrder(order, avoidSameOrder)) {
+      continue;
+    }
+    return order;
+  }
+
+  // Deterministic fallback guaranteed to satisfy constraints for length >= 3
+  const fallback = [...identity];
+  if (avoidFirstIndex !== undefined && fallback[0] === avoidFirstIndex) {
+    [fallback[0], fallback[1]] = [fallback[1], fallback[0]];
+  }
+  if (avoidSameOrder && isSameOrder(fallback, avoidSameOrder)) {
+    [fallback[fallback.length - 2], fallback[fallback.length - 1]] = [
+      fallback[fallback.length - 1],
+      fallback[fallback.length - 2],
+    ];
+  }
+  return fallback;
+}
+
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
@@ -66,16 +127,43 @@ export default function App() {
   const [transferImportDraft, setTransferImportDraft] = useState<string>('');
   const [confirmResetData, setConfirmResetData] = useState<boolean>(false);
   const [showSceneMenu, setShowSceneMenu] = useState<boolean>(false);
+  const [showBgmMenu, setShowBgmMenu] = useState<boolean>(false);
   const [customVideo, setCustomVideo] = useState<{
     name: string;
     url: string;
   } | null>(null);
+  const [customBgm, setCustomBgm] = useState<{
+    name: string;
+    url: string;
+  } | null>(null);
+  const [bgmPlayback, setBgmPlayback] = useState<{
+    order: number[];
+    pos: number;
+  }>(() => ({
+    order: createShuffledTrackOrder(
+      bgmTracks.length,
+      undefined,
+      bgmTracks.map((_, i) => i)
+    ),
+    pos: 0,
+  }));
+  const [isRadioOn, setIsRadioOn] = useState<boolean>(true);
+  const [isRadioWarmingUp, setIsRadioWarmingUp] = useState<boolean>(false);
+  const [isRadioPoweringOff, setIsRadioPoweringOff] = useState<boolean>(false);
+  const [bgmNeedsGesture, setBgmNeedsGesture] = useState<boolean>(false);
 
   const bgVideoRef = useRef<HTMLVideoElement | null>(null);
+  const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
   const lastBgIndexRef = useRef<number>(-1);
   const customVideoUrlRef = useRef<string | null>(null);
+  const customBgmUrlRef = useRef<string | null>(null);
+  const powerWarmupTimerRef = useRef<number | null>(null);
+  const powerOffTimerRef = useRef<number | null>(null);
+  const volumeFadeRafRef = useRef<number | null>(null);
   const sceneMenuRef = useRef<HTMLDivElement | null>(null);
+  const bgmMenuRef = useRef<HTMLDivElement | null>(null);
   const customVideoInputRef = useRef<HTMLInputElement | null>(null);
+  const customBgmInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const jumpTimerRef = useRef<number | null>(null);
   const totalTimerRef = useRef<number | null>(null);
@@ -130,18 +218,266 @@ export default function App() {
     setShowSceneMenu(false);
   }, []);
 
+  const activeTrackOriginalIndex =
+    bgmPlayback.order[bgmPlayback.pos] ?? 0;
+  const activeBgmTrack = bgmTracks[activeTrackOriginalIndex] ?? bgmTracks[0];
+  const activeBgmUrl =
+    isTestMode && customBgm ? customBgm.url : activeBgmTrack?.audioUrl;
+  const activeBgmName =
+    isTestMode && customBgm ? customBgm.name : activeBgmTrack?.title;
+
+  const clearCustomBgm = useCallback(() => {
+    if (customBgmUrlRef.current) {
+      URL.revokeObjectURL(customBgmUrlRef.current);
+      customBgmUrlRef.current = null;
+    }
+    setCustomBgm(null);
+  }, []);
+
+  const selectBgmByIndex = useCallback(
+    (trackIdx: number) => {
+      if (trackIdx < 0 || trackIdx >= bgmTracks.length) return;
+      clearCustomBgm();
+      setBgmPlayback((prev) => {
+        const foundPos = prev.order.indexOf(trackIdx);
+        if (foundPos !== -1) {
+          return { ...prev, pos: foundPos };
+        }
+        return prev;
+      });
+      setIsRadioOn(true);
+      setShowBgmMenu(false);
+    },
+    [clearCustomBgm]
+  );
+
+  const playCustomBgmFile = useCallback((file: File) => {
+    if (customBgmUrlRef.current) {
+      URL.revokeObjectURL(customBgmUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(file);
+    customBgmUrlRef.current = objectUrl;
+    setCustomBgm({ name: file.name, url: objectUrl });
+    setIsRadioOn(true);
+    setShowBgmMenu(false);
+  }, []);
+
+  const handlePrevBgm = useCallback(() => {
+    clearCustomBgm();
+    setBgmPlayback((prev) => ({
+      ...prev,
+      pos: (prev.pos - 1 + prev.order.length) % prev.order.length,
+    }));
+  }, [clearCustomBgm]);
+
+  const handleNextBgm = useCallback(() => {
+    clearCustomBgm();
+    setBgmPlayback((prev) => {
+      const nextPos = prev.pos + 1;
+      if (nextPos < prev.order.length) {
+        return { ...prev, pos: nextPos };
+      }
+      const lastTrackIdx = prev.order[prev.pos];
+      return {
+        order: createShuffledTrackOrder(
+          bgmTracks.length,
+          lastTrackIdx,
+          prev.order
+        ),
+        pos: 0,
+      };
+    });
+  }, [clearCustomBgm]);
+
+  const cancelPowerTimersAndFade = useCallback(() => {
+    if (powerWarmupTimerRef.current !== null) {
+      window.clearTimeout(powerWarmupTimerRef.current);
+      powerWarmupTimerRef.current = null;
+    }
+    if (powerOffTimerRef.current !== null) {
+      window.clearTimeout(powerOffTimerRef.current);
+      powerOffTimerRef.current = null;
+    }
+    if (volumeFadeRafRef.current !== null) {
+      window.cancelAnimationFrame(volumeFadeRafRef.current);
+      volumeFadeRafRef.current = null;
+    }
+  }, []);
+
+  const fadeAudioVolume = useCallback(
+    (
+      audio: HTMLAudioElement,
+      fromVol: number,
+      toVol: number,
+      durationMs: number,
+      onDone?: () => void
+    ) => {
+      if (volumeFadeRafRef.current !== null) {
+        window.cancelAnimationFrame(volumeFadeRafRef.current);
+        volumeFadeRafRef.current = null;
+      }
+      const startTime = performance.now();
+      audio.volume = Math.max(0, Math.min(1, fromVol));
+
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - startTime) / Math.max(1, durationMs));
+        const eased = 1 - Math.pow(1 - progress, 2);
+        audio.volume = Math.max(
+          0,
+          Math.min(1, fromVol + (toVol - fromVol) * eased)
+        );
+        if (progress < 1) {
+          volumeFadeRafRef.current = window.requestAnimationFrame(step);
+        } else {
+          volumeFadeRafRef.current = null;
+          onDone?.();
+        }
+      };
+
+      volumeFadeRafRef.current = window.requestAnimationFrame(step);
+    },
+    []
+  );
+
+  const handleToggleRadioPower = useCallback(() => {
+    const audio = bgmAudioRef.current;
+
+    if (isRadioOn && !isRadioPoweringOff) {
+      // Turning OFF: play vintage "プスッ..." sound while quickly fading out audio, then cut power
+      cancelPowerTimersAndFade();
+      setIsRadioWarmingUp(false);
+      setIsRadioPoweringOff(true);
+      setBgmNeedsGesture(false);
+      playRadioButtonSfx('power_off');
+
+      if (audio && !audio.paused) {
+        fadeAudioVolume(audio, audio.volume, 0, 100, () => {
+          audio.muted = true;
+          audio.pause();
+        });
+      } else if (audio) {
+        audio.muted = true;
+        audio.pause();
+      }
+
+      powerOffTimerRef.current = window.setTimeout(() => {
+        powerOffTimerRef.current = null;
+        setIsRadioPoweringOff(false);
+        setIsRadioOn(false);
+      }, 220);
+      return;
+    }
+
+    // Turning ON: play vintage "パチッパチパチパチ。。。" crackle first, then fade in music
+    cancelPowerTimersAndFade();
+    setIsRadioPoweringOff(false);
+    setIsRadioOn(true);
+    setIsRadioWarmingUp(true);
+    playRadioButtonSfx('power_on');
+
+    if (audio) {
+      // Keep audio unlocked inside the user click gesture while muted during tube warm-up
+      audio.muted = true;
+      audio.volume = 0;
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+    }
+
+    powerWarmupTimerRef.current = window.setTimeout(() => {
+      powerWarmupTimerRef.current = null;
+      setIsRadioWarmingUp(false);
+    }, RADIO_POWER_WARMUP_MS);
+  }, [isRadioOn, isRadioPoweringOff, cancelPowerTimersAndFade, fadeAudioVolume]);
+
+  const handleUnlockBgmAudio = useCallback(() => {
+    const audio = bgmAudioRef.current;
+    if (!audio || !isRadioOn || isRadioWarmingUp || isRadioPoweringOff) return;
+    audio.muted = false;
+    audio.volume = 0.45;
+    audio
+      .play()
+      .then(() => setBgmNeedsGesture(false))
+      .catch(() => setBgmNeedsGesture(true));
+  }, [isRadioOn, isRadioWarmingUp, isRadioPoweringOff]);
+
+  useEffect(() => {
+    const audio = bgmAudioRef.current;
+    if (!audio) return;
+
+    if (!isRadioOn) {
+      audio.muted = true;
+      audio.pause();
+      setBgmNeedsGesture(false);
+      return;
+    }
+
+    if (isRadioPoweringOff || isRadioWarmingUp) {
+      return;
+    }
+
+    audio.muted = false;
+    let cancelled = false;
+
+    const tryPlay = () => {
+      const p = audio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
+          if (!cancelled) {
+            setBgmNeedsGesture(false);
+            if (audio.volume < 0.44) {
+              fadeAudioVolume(audio, Math.max(0.06, audio.volume), 0.45, 280);
+            } else {
+              audio.volume = 0.45;
+            }
+          }
+        }).catch(() => {
+          if (!cancelled) setBgmNeedsGesture(true);
+        });
+      }
+    };
+
+    tryPlay();
+
+    const onFirstGesture = () => {
+      if (!cancelled && isRadioOn && !isRadioWarmingUp && !isRadioPoweringOff) {
+        tryPlay();
+      }
+    };
+    document.addEventListener('pointerdown', onFirstGesture, { once: true });
+    document.addEventListener('keydown', onFirstGesture, { once: true });
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('pointerdown', onFirstGesture);
+      document.removeEventListener('keydown', onFirstGesture);
+    };
+  }, [
+    activeBgmUrl,
+    isRadioOn,
+    isRadioWarmingUp,
+    isRadioPoweringOff,
+    fadeAudioVolume,
+  ]);
+
   useEffect(() => {
     changeRandomLibraryBackground();
   }, [changeRandomLibraryBackground]);
 
   useEffect(() => {
     return () => {
+      cancelPowerTimersAndFade();
       if (customVideoUrlRef.current) {
         URL.revokeObjectURL(customVideoUrlRef.current);
         customVideoUrlRef.current = null;
       }
+      if (customBgmUrlRef.current) {
+        URL.revokeObjectURL(customBgmUrlRef.current);
+        customBgmUrlRef.current = null;
+      }
     };
-  }, []);
+  }, [cancelPowerTimersAndFade]);
 
   useEffect(() => {
     try {
@@ -208,12 +544,14 @@ export default function App() {
     setIsTestMode(false);
     setTestQuestionLimit(null);
     setShowSceneMenu(false);
+    setShowBgmMenu(false);
     clearCustomVideo();
+    clearCustomBgm();
     setShowSecretInput(false);
     setSecretDraft('');
     keyBufferRef.current = '';
     showMessage('✦ テストモードを終了しました。');
-  }, [showMessage, clearCustomVideo]);
+  }, [showMessage, clearCustomVideo, clearCustomBgm]);
 
   const currentQuestion =
     currentDataset?.questions[currentIndex] ?? null;
@@ -315,18 +653,26 @@ export default function App() {
   }, [isTestMode, exitTestMode]);
 
   useEffect(() => {
-    if (!showSceneMenu) return;
+    if (!showSceneMenu && !showBgmMenu) return;
     const handleOutsideClick = (e: MouseEvent) => {
       if (
+        showSceneMenu &&
         sceneMenuRef.current &&
         !sceneMenuRef.current.contains(e.target as Node)
       ) {
         setShowSceneMenu(false);
       }
+      if (
+        showBgmMenu &&
+        bgmMenuRef.current &&
+        !bgmMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowBgmMenu(false);
+      }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showSceneMenu]);
+  }, [showSceneMenu, showBgmMenu]);
 
   useEffect(() => {
     if (showSecretInput) {
@@ -691,6 +1037,29 @@ export default function App() {
         preload="auto"
         className="library-bg-video"
       />
+      <audio
+        ref={bgmAudioRef}
+        src={activeBgmUrl}
+        preload="auto"
+        onEnded={handleNextBgm}
+        onCanPlay={() => {
+          const audio = bgmAudioRef.current;
+          if (
+            isRadioOn &&
+            !isRadioWarmingUp &&
+            !isRadioPoweringOff &&
+            audio &&
+            audio.paused
+          ) {
+            audio.volume = 0.45;
+            audio.muted = false;
+            audio
+              .play()
+              .then(() => setBgmNeedsGesture(false))
+              .catch(() => {});
+          }
+        }}
+      />
       <div className="library-bg-overlay" />
 
       {/* Header */}
@@ -724,12 +1093,15 @@ export default function App() {
               </h1>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-3">
             <div ref={sceneMenuRef} className="relative">
               {isTestMode ? (
                 <button
                   type="button"
-                  onClick={() => setShowSceneMenu((prev) => !prev)}
+                  onClick={() => {
+                    setShowBgmMenu(false);
+                    setShowSceneMenu((prev) => !prev);
+                  }}
                   title="クリックして背景動画を選択"
                   className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-[#2a1c30] hover:bg-[#3a2542] text-[#f3e5ab] border border-[#d4af37]/70 hover:border-[#ffd700] tracking-wider transition shadow cursor-pointer"
                 >
@@ -806,6 +1178,93 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {isTestMode && (
+              <div ref={bgmMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSceneMenu(false);
+                    setShowBgmMenu((prev) => !prev);
+                  }}
+                  title="クリックしてBGMを選択"
+                  className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-[#2a1c30] hover:bg-[#3a2542] text-[#f3e5ab] border border-[#d4af37]/70 hover:border-[#ffd700] tracking-wider transition shadow cursor-pointer"
+                >
+                  <span className="max-w-[160px] sm:max-w-[220px] truncate">
+                    {customBgm ? '🎵' : isRadioOn ? '📻' : '🔇'} {activeBgmName}{' '}
+                    {customBgm
+                      ? '(任意)'
+                      : `(${activeTrackOriginalIndex + 1}/${bgmTracks.length})${!isRadioOn ? ' OFF' : ''}`}
+                  </span>
+                  <span className="text-[9px] text-[#d4af37]">▼</span>
+                </button>
+
+                {showBgmMenu && (
+                  <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#141019]/95 backdrop-blur-md border border-[#c5a059]/70 shadow-2xl p-2 z-50 animate-fadeIn">
+                    <div className="px-2.5 py-1.5 text-[11px] font-bold text-[#d4af37] border-b border-[#c5a059]/25 mb-1 flex items-center justify-between">
+                      <span>🎵 BGMを選択</span>
+                      <span className="text-[10px] text-[#9e9285]">
+                        テストモード
+                      </span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto space-y-1">
+                      {bgmTracks.map((track, idx) => {
+                        const isActive =
+                          !customBgm && activeTrackOriginalIndex === idx;
+                        return (
+                          <button
+                            key={track.id}
+                            type="button"
+                            onClick={() => selectBgmByIndex(idx)}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition cursor-pointer ${
+                              isActive
+                                ? 'bg-[#3a1c24] text-[#f3e5ab] border border-[#d4af37]/70 font-bold'
+                                : 'text-[#dfd7c8] hover:bg-[#231b2b] border border-transparent'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="block truncate">
+                                {idx + 1}. {track.title}
+                              </span>
+                              <span className="block truncate text-[10px] text-[#a69a8c] font-normal">
+                                {track.subtitle}
+                              </span>
+                            </div>
+                            {isActive && (
+                              <span className="text-[10px] text-[#ffd700] shrink-0">
+                                {isRadioOn ? '再生中' : '選択中'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="border-t border-[#c5a059]/25 mt-2 pt-2 space-y-1.5">
+                      <input
+                        ref={customBgmInputRef}
+                        type="file"
+                        accept="audio/*,video/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            playCustomBgmFile(file);
+                          }
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => customBgmInputRef.current?.click()}
+                        className="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] border border-[#c5a059]/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>📁 任意の音声/動画ファイルを選択</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {viewMode !== 'home' && (
               <button
                 type="button"
@@ -830,7 +1289,7 @@ export default function App() {
         {/* VIEW 1: HOME */}
         {viewMode === 'home' && (
           <div className="space-y-8 animate-fadeIn">
-            <div className="text-center space-y-3 mb-8">
+            <div className="text-center space-y-3 mb-4">
               <button
                 type="button"
                 onClick={() => setShowSecretInput((prev) => !prev)}
@@ -873,6 +1332,19 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            <AntiqueRadioPlayer
+              tracks={bgmTracks}
+              currentIndex={activeTrackOriginalIndex}
+              isOn={isRadioOn}
+              needsGesture={bgmNeedsGesture}
+              onPrev={handlePrevBgm}
+              onNext={handleNextBgm}
+              onTogglePower={handleToggleRadioPower}
+              onUnlockAudio={handleUnlockBgmAudio}
+              customTrackName={isTestMode && customBgm ? customBgm.name : null}
+              showTrackNumber={isTestMode}
+            />
 
             {currentFolder === 'practice_set_1_2' ? (
               <div className="grid grid-cols-1 gap-6">
