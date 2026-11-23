@@ -17,7 +17,7 @@ import {
 
 type ViewMode = 'home' | 'quiz' | 'result' | 'transfer';
 
-const SCROLL_NUMBERS = ['壱', '弐', '参', '肆', '伍', '陸'];
+const SCROLL_NUMBERS = ['壱', '弐', '参', '肆', '伍', '陸', '漆', '捌', '玖', '拾'];
 const REVIEW_STORAGE_KEY = 'daia_3dcad_review_questions_v1';
 const REVIEW_DATASET_ID = 'review_wrong_questions';
 

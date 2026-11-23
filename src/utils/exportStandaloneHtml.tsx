@@ -899,7 +899,7 @@ export function generateStandaloneBackupHtml(datasets: QuizDataset[]): string {
       const container = document.getElementById('file-list-container');
       container.innerHTML = '';
 
-      const scrollNumbers = ['壱', '弐', '参', '肆', '伍', '陸'];
+      const scrollNumbers = ['壱', '弐', '参', '肆', '伍', '陸', '漆', '捌', '玖', '拾'];
 
       if (currentFolder === 'practice_set_1_2') {
         const backBar = document.createElement('div');
