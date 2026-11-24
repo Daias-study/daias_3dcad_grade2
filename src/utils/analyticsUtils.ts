@@ -3,6 +3,12 @@ import { getQuestionKey } from './transferUtils';
 
 export const STUDY_HISTORY_STORAGE_KEY = 'daia_3dcad_study_history_v1';
 
+export interface DailyQuizStats {
+  attempts: number;
+  correct: number;
+  durationSec: number;
+}
+
 export type StudyGenre =
   | 'モデリング手順・コマンド'
   | '形状表現・幾何理論'
@@ -111,6 +117,7 @@ export interface LearningAnalyticsSummary {
   scatterCorrelation: number | null;
   histogramBins: HistogramBin[];
   boxPlots: BoxPlotSummary[];
+  dailyQuizStats: Record<string, DailyQuizStats>;
 }
 
 const GENRE_RULES: Array<[StudyGenre, RegExp]> = [
@@ -191,6 +198,21 @@ export function clearStudyHistory(): void {
   } catch {
     // ignore storage errors
   }
+}
+
+export function formatDateKey(
+  year: number,
+  month: number,
+  day: number
+): string {
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${year}-${mm}-${dd}`;
+}
+
+export function toDateKey(tsOrDate: number | Date): string {
+  const d = typeof tsOrDate === 'number' ? new Date(tsOrDate) : tsOrDate;
+  return formatDateKey(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
 function computeMedian(sorted: number[]): number {
@@ -518,6 +540,21 @@ export function buildLearningAnalytics(
     computeBoxPlot('不正解時', wrongDurations),
   ].filter((item): item is BoxPlotSummary => item !== null);
 
+  const dailyQuizStats: Record<string, DailyQuizStats> = {};
+  for (const att of sortedAttempts) {
+    const key = toDateKey(att.timestamp);
+    const prev = dailyQuizStats[key] ?? {
+      attempts: 0,
+      correct: 0,
+      durationSec: 0,
+    };
+    dailyQuizStats[key] = {
+      attempts: prev.attempts + 1,
+      correct: prev.correct + (att.isCorrect ? 1 : 0),
+      durationSec: prev.durationSec + att.durationSec,
+    };
+  }
+
   return {
     totalUniqueQuestions,
     masteredCount,
@@ -537,5 +574,6 @@ export function buildLearningAnalytics(
     scatterCorrelation,
     histogramBins,
     boxPlots,
+    dailyQuizStats,
   };
 }

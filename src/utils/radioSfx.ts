@@ -11,32 +11,47 @@ export type RadioSfxKind =
   | 'quiz_correct'
   | 'quiz_wrong';
 
-// Switch-on click (~45ms) followed by 1.0s (90%), 3.0s (5%), or 5.0s (5%) of Noise 3 or Noise 4 scratch crackle
+// Switch-on click (~45ms) followed by 1.0s (86%), 3.0s (5%), 5.0s (5%), 10.0s (2%), or 20.0s (2%) of Noise 3 or Noise 4
 export const RADIO_POWER_WARMUP_MS = 1045;
 
+export type PowerOnNoiseDurationSec = 1 | 3 | 5 | 10 | 20;
+type NoiseClipBucketSec = 1 | 3 | 5;
+
 const BASE = import.meta.env.BASE_URL;
-const POWER_ON_NOISE_URLS = [
-  `${BASE}assets/sfx/radio_noise_3.mp3`,
-  `${BASE}assets/sfx/radio_noise_4.mp3`,
-] as const;
+const POWER_ON_NOISE_URLS: Record<NoiseClipBucketSec, readonly [string, string]> = {
+  1: [
+    `${BASE}assets/sfx/radio_noise_3.mp3`,
+    `${BASE}assets/sfx/radio_noise_4.mp3`,
+  ],
+  3: [
+    `${BASE}assets/sfx/radio_noise_3_3s.mp3`,
+    `${BASE}assets/sfx/radio_noise_4_3s.mp3`,
+  ],
+  5: [
+    `${BASE}assets/sfx/radio_noise_3_5s.mp3`,
+    `${BASE}assets/sfx/radio_noise_4_5s.mp3`,
+  ],
+};
 const DIAL_SFX_URL = `${BASE}assets/sfx/radio_dial_snap.wav`;
 
 const SWITCH_CLICK_LEAD_SEC = 0.045;
-const DEFAULT_SCRATCH_NOISE_DURATION_SEC = 1.0;
+const DEFAULT_SCRATCH_NOISE_DURATION_SEC: PowerOnNoiseDurationSec = 1;
 
-export function rollPowerOnNoiseDurationSec(): 1 | 3 | 5 {
+export function rollPowerOnNoiseDurationSec(): PowerOnNoiseDurationSec {
   const roll = Math.random();
-  if (roll < 0.05) return 5;
-  if (roll < 0.10) return 3;
+  if (roll < 0.02) return 20;
+  if (roll < 0.04) return 10;
+  if (roll < 0.09) return 5;
+  if (roll < 0.14) return 3;
   return 1;
 }
 
 let sharedAudioCtx: AudioContext | null = null;
 let cachedNoiseBuffer: AudioBuffer | null = null;
 
-const rawNoisePromises: Array<Promise<ArrayBuffer | null> | null> = [null, null];
-const rawNoiseBuffers: Array<ArrayBuffer | null> = [null, null];
-const decodedNoiseBuffers: Array<AudioBuffer | null> = [null, null];
+const rawNoisePromises = new Map<string, Promise<ArrayBuffer | null>>();
+const rawNoiseBuffers = new Map<string, ArrayBuffer>();
+const decodedNoiseBuffers = new Map<string, AudioBuffer>();
 
 let rawDialPromise: Promise<ArrayBuffer | null> | null = null;
 let rawDialBuffer: ArrayBuffer | null = null;
@@ -78,41 +93,58 @@ function getAudioContext(): AudioContext | null {
   return sharedAudioCtx;
 }
 
-function fetchRawNoise(index: 0 | 1): Promise<ArrayBuffer | null> {
+function getNoiseUrl(
+  durationSec: PowerOnNoiseDurationSec,
+  index: 0 | 1
+): string {
+  const bucket: NoiseClipBucketSec = durationSec >= 10 ? 5 : (durationSec as NoiseClipBucketSec);
+  return POWER_ON_NOISE_URLS[bucket][index];
+}
+
+function fetchRawNoise(
+  durationSec: PowerOnNoiseDurationSec,
+  index: 0 | 1
+): Promise<ArrayBuffer | null> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') {
     return Promise.resolve(null);
   }
-  if (rawNoiseBuffers[index]) {
-    return Promise.resolve(rawNoiseBuffers[index]);
+  const url = getNoiseUrl(durationSec, index);
+  const existing = rawNoiseBuffers.get(url);
+  if (existing) {
+    return Promise.resolve(existing);
   }
-  if (!rawNoisePromises[index]) {
-    rawNoisePromises[index] = fetch(POWER_ON_NOISE_URLS[index])
+  let promise = rawNoisePromises.get(url);
+  if (!promise) {
+    promise = fetch(url)
       .then((res) => (res.ok ? res.arrayBuffer() : null))
       .then((buf) => {
         if (buf) {
-          rawNoiseBuffers[index] = buf;
+          rawNoiseBuffers.set(url, buf);
         }
         return buf;
       })
       .catch(() => null);
+    rawNoisePromises.set(url, promise);
   }
-  return rawNoisePromises[index]!;
+  return promise;
 }
 
 async function getDecodedNoiseBuffer(
   ctx: AudioContext,
+  durationSec: PowerOnNoiseDurationSec,
   index: 0 | 1
 ): Promise<AudioBuffer | null> {
-  const existing = decodedNoiseBuffers[index];
+  const url = getNoiseUrl(durationSec, index);
+  const existing = decodedNoiseBuffers.get(url);
   if (existing && existing.sampleRate === ctx.sampleRate) {
     return existing;
   }
-  const raw = await fetchRawNoise(index);
+  const raw = await fetchRawNoise(durationSec, index);
   if (!raw) return null;
   try {
     // Pass a copy because decodeAudioData detaches the ArrayBuffer
     const decoded = await ctx.decodeAudioData(raw.slice(0));
-    decodedNoiseBuffers[index] = decoded;
+    decodedNoiseBuffers.set(url, decoded);
     return decoded;
   } catch {
     return null;
@@ -159,8 +191,10 @@ async function getDecodedDialBuffer(
 
 export function preloadRadioNoiseSfx(): void {
   if (typeof window === 'undefined') return;
-  void fetchRawNoise(0);
-  void fetchRawNoise(1);
+  for (const dur of [1, 3, 5] as const) {
+    void fetchRawNoise(dur, 0);
+    void fetchRawNoise(dur, 1);
+  }
   void fetchRawDial();
 }
 
@@ -198,11 +232,12 @@ export function stopActivePowerOnNoise(): void {
 function playPowerOnScratchNoise(
   ctx: AudioContext,
   clickTime: number,
-  noiseDurationSec: number = DEFAULT_SCRATCH_NOISE_DURATION_SEC
+  noiseDurationSec: PowerOnNoiseDurationSec = DEFAULT_SCRATCH_NOISE_DURATION_SEC
 ): void {
   stopActivePowerOnNoise();
   const session = powerOnSessionId;
   const noiseIndex: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
+  const url = getNoiseUrl(noiseDurationSec, noiseIndex);
 
   const startDecodedBuffer = (buf: AudioBuffer, scheduledAt: number) => {
     if (session !== powerOnSessionId) return;
@@ -211,10 +246,11 @@ function playPowerOnScratchNoise(
 
     const needsLoop = noiseDurationSec > buf.duration;
     if (needsLoop) {
-      const trimEdge = Math.min(0.05, buf.duration * 0.1);
+      const loopStart = Math.min(0.05, buf.duration * 0.1);
+      const loopEnd = Math.max(loopStart + 0.5, buf.duration - 0.08);
       src.loop = true;
-      src.loopStart = trimEdge;
-      src.loopEnd = Math.max(trimEdge + 0.2, buf.duration - trimEdge);
+      src.loopStart = loopStart;
+      src.loopEnd = loopEnd;
     }
 
     const playDuration = needsLoop
@@ -246,7 +282,7 @@ function playPowerOnScratchNoise(
     src.start(scheduledAt, 0, playDuration);
   };
 
-  const cachedDecoded = decodedNoiseBuffers[noiseIndex];
+  const cachedDecoded = decodedNoiseBuffers.get(url);
   if (cachedDecoded && cachedDecoded.sampleRate === ctx.sampleRate) {
     startDecodedBuffer(cachedDecoded, clickTime + SWITCH_CLICK_LEAD_SEC);
     return;
@@ -254,7 +290,7 @@ function playPowerOnScratchNoise(
 
   // Decode pre-fetched buffer (or fetch if first-click was instant), falling back to HTMLAudioElement if needed
   const targetStartTime = clickTime + SWITCH_CLICK_LEAD_SEC;
-  getDecodedNoiseBuffer(ctx, noiseIndex).then((decoded) => {
+  getDecodedNoiseBuffer(ctx, noiseDurationSec, noiseIndex).then((decoded) => {
     if (session !== powerOnSessionId) return;
     if (decoded) {
       const safeStart = Math.max(ctx.currentTime + 0.002, targetStartTime);
@@ -266,9 +302,9 @@ function playPowerOnScratchNoise(
     const delayMs = Math.max(0, (targetStartTime - ctx.currentTime) * 1000);
     activeNoiseFallbackTimer = window.setTimeout(() => {
       if (session !== powerOnSessionId) return;
-      const el = new Audio(POWER_ON_NOISE_URLS[noiseIndex]);
+      const el = new Audio(url);
       el.volume = 0.72;
-      el.loop = noiseDurationSec > 1;
+      el.loop = noiseDurationSec > 5;
       activeNoiseAudio = el;
       const p = el.play();
       if (p && typeof p.catch === 'function') {
@@ -708,7 +744,7 @@ export function playRadioButtonSfx(kind: RadioSfxKind): void {
 
 function playRadioButtonSfxWithPowerDuration(
   kind: RadioSfxKind,
-  powerOnNoiseDurationSec: number
+  powerOnNoiseDurationSec: PowerOnNoiseDurationSec
 ): void {
   try {
     // Button sound effects (prev, next, power_on, power_off) are muted when the SFX dial is OFF.

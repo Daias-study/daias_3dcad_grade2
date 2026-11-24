@@ -26,10 +26,11 @@ import {
   stopActivePowerOnNoise,
 } from './utils/radioSfx';
 import {
-  exportReviewToBase64Url,
+  exportTransferToBase64Url,
   getQuestionKey,
-  importReviewFromBase64Url,
+  importTransferFromBase64Url,
   mergeReviewQuestions,
+  mergeStudyHistory,
 } from './utils/transferUtils';
 
 type ViewMode = 'home' | 'quiz' | 'result' | 'transfer' | 'analytics';
@@ -408,7 +409,7 @@ export default function App() {
       return;
     }
 
-    // Turning ON: play switch click + Noise 3/4 crackle (1s at 90%, 3s at 5%, 5s at 5%) when SFX enabled, otherwise start immediately
+    // Turning ON: play switch click + Noise 3/4 crackle (1s 86%, 3s 5%, 5s 5%, 10s 2%, 20s 2%) when SFX enabled, otherwise start immediately
     cancelPowerTimersAndFade();
     setIsRadioPoweringOff(false);
     setIsRadioOn(true);
@@ -546,12 +547,19 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const saveToken = params.get('save');
       if (!saveToken) return;
-      const imported = importReviewFromBase64Url(saveToken, quizDatasets);
+      const imported = importTransferFromBase64Url(saveToken, quizDatasets);
       setReviewQuestions((prev) => {
-        const merged = mergeReviewQuestions(prev, imported);
+        const merged = mergeReviewQuestions(prev, imported.reviewQuestions);
         saveStoredReviewQuestions(merged);
         return merged;
       });
+      if (imported.hasStudyHistory) {
+        setStudyHistory((prev) => {
+          const merged = mergeStudyHistory(prev, imported.studyHistory);
+          saveStudyHistory(merged);
+          return merged;
+        });
+      }
       params.delete('save');
       const nextSearch = params.toString();
       const nextUrl =
@@ -560,7 +568,9 @@ export default function App() {
         window.location.hash;
       window.history.replaceState(null, '', nextUrl);
       setToastMsg(
-        `✦ URLから引継ぎデータ（${imported.length}問）を読み込みました。`
+        imported.hasStudyHistory
+          ? `✦ URLから引継ぎデータ（復習問題集 ${imported.reviewQuestions.length}問・学習データ分析 ${imported.studyHistory.length}件）を読み込みました。`
+          : `✦ URLから引継ぎデータ（復習問題集 ${imported.reviewQuestions.length}問）を読み込みました。`
       );
       toastTimerRef.current = window.setTimeout(() => {
         setToastMsg(null);
@@ -1036,6 +1046,11 @@ export default function App() {
   );
   const analyticsSummary = useMemo(
     () => buildLearningAnalytics(quizDatasets, reviewQuestions, studyHistory),
+    [reviewQuestions, studyHistory]
+  );
+  const transferCode = useMemo(
+    () =>
+      exportTransferToBase64Url(reviewQuestions, studyHistory, quizDatasets),
     [reviewQuestions, studyHistory]
   );
 
@@ -2211,25 +2226,26 @@ export default function App() {
                   データ引継ぎ（Base64URL）
                 </h2>
                 <p className="text-xs sm:text-sm text-[#a69a8c]">
-                  現在の復習問題（全 {reviewQuestions.length}{' '}
-                  問）をコードやURLとして別の端末・ブラウザへ引き継げます。
+                  現在の復習問題集（全 {reviewQuestions.length} 問）と学習データ分析（
+                  {studyHistory.length} 件）をコードやURLとして別の端末・ブラウザへ引き継げます。
                 </p>
               </div>
 
               {/* 書き出し（エクスポート） */}
               <div className="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm sm:text-base font-bold text-[#d4af37]">
                     📤 データを書き出す（引継ぎコード）
                   </h3>
                   <span className="text-xs text-[#a69a8c]">
-                    収録数：{reviewQuestions.length} 問
+                    復習問題集 {reviewQuestions.length} 問 ／ 学習データ分析{' '}
+                    {studyHistory.length} 件
                   </span>
                 </div>
                 <textarea
                   readOnly
                   rows={3}
-                  value={exportReviewToBase64Url(reviewQuestions, quizDatasets)}
+                  value={transferCode}
                   onFocus={(e) => e.currentTarget.select()}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f3e5ab] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
                 />
@@ -2238,15 +2254,11 @@ export default function App() {
                     type="button"
                     onClick={async () => {
                       playRadioButtonSfx('ui_click');
-                      const code = exportReviewToBase64Url(
-                        reviewQuestions,
-                        quizDatasets
-                      );
                       try {
-                        await navigator.clipboard.writeText(code);
+                        await navigator.clipboard.writeText(transferCode);
                       } catch {
                         const tmp = document.createElement('textarea');
-                        tmp.value = code;
+                        tmp.value = transferCode;
                         document.body.appendChild(tmp);
                         tmp.select();
                         document.execCommand('copy');
@@ -2262,12 +2274,8 @@ export default function App() {
                     type="button"
                     onClick={async () => {
                       playRadioButtonSfx('ui_click');
-                      const code = exportReviewToBase64Url(
-                        reviewQuestions,
-                        quizDatasets
-                      );
                       const base = `${window.location.origin}${window.location.pathname}`;
-                      const shareUrl = `${base}?save=${code}`;
+                      const shareUrl = `${base}?save=${transferCode}`;
                       try {
                         await navigator.clipboard.writeText(shareUrl);
                       } catch {
@@ -2305,15 +2313,21 @@ export default function App() {
                     onClick={() => {
                       playRadioButtonSfx('ui_click');
                       try {
-                        const imported = importReviewFromBase64Url(
+                        const imported = importTransferFromBase64Url(
                           transferImportDraft,
                           quizDatasets
                         );
-                        setReviewQuestions(imported);
-                        saveStoredReviewQuestions(imported);
+                        setReviewQuestions(imported.reviewQuestions);
+                        saveStoredReviewQuestions(imported.reviewQuestions);
+                        if (imported.hasStudyHistory) {
+                          setStudyHistory(imported.studyHistory);
+                          saveStudyHistory(imported.studyHistory);
+                        }
                         setTransferImportDraft('');
                         showMessage(
-                          `✦ ${imported.length} 問の復習データを引き継ぎました（上書き）。`
+                          imported.hasStudyHistory
+                            ? `✦ 復習問題集（${imported.reviewQuestions.length} 問）と学習データ分析（${imported.studyHistory.length} 件）を引き継ぎました（上書き）。`
+                            : `✦ 復習問題集（${imported.reviewQuestions.length} 問）を引き継ぎました（上書き）。`
                         );
                       } catch {
                         showMessage(
@@ -2330,21 +2344,40 @@ export default function App() {
                     onClick={() => {
                       playRadioButtonSfx('ui_click');
                       try {
-                        const imported = importReviewFromBase64Url(
+                        const imported = importTransferFromBase64Url(
                           transferImportDraft,
                           quizDatasets
                         );
-                        const merged = mergeReviewQuestions(
+                        const mergedReview = mergeReviewQuestions(
                           reviewQuestions,
-                          imported
+                          imported.reviewQuestions
                         );
-                        const addedCount =
-                          merged.length - reviewQuestions.length;
-                        setReviewQuestions(merged);
-                        saveStoredReviewQuestions(merged);
+                        const addedReviewCount =
+                          mergedReview.length - reviewQuestions.length;
+                        setReviewQuestions(mergedReview);
+                        saveStoredReviewQuestions(mergedReview);
+
+                        let addedHistoryCount = 0;
+                        let totalHistoryCount = studyHistory.length;
+                        if (imported.hasStudyHistory) {
+                          const mergedHistory = mergeStudyHistory(
+                            studyHistory,
+                            imported.studyHistory
+                          );
+                          addedHistoryCount = Math.max(
+                            0,
+                            mergedHistory.length - studyHistory.length
+                          );
+                          totalHistoryCount = mergedHistory.length;
+                          setStudyHistory(mergedHistory);
+                          saveStudyHistory(mergedHistory);
+                        }
+
                         setTransferImportDraft('');
                         showMessage(
-                          `✦ 復習データを統合しました（新規追加 ${addedCount} 問・合計 ${merged.length} 問）。`
+                          imported.hasStudyHistory
+                            ? `✦ 統合しました（復習問題集 +${addedReviewCount}問 計${mergedReview.length}問 ／ 学習データ分析 +${addedHistoryCount}件 計${totalHistoryCount}件）。`
+                            : `✦ 復習問題集を統合しました（新規追加 ${addedReviewCount} 問・合計 ${mergedReview.length} 問）。`
                         );
                       } catch {
                         showMessage(
@@ -2375,8 +2408,8 @@ export default function App() {
               ) : (
                 <div className="bg-[#261117]/90 border border-rose-500/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
                   <p className="text-xs sm:text-sm text-rose-200 font-semibold">
-                    保存されている復習問題データ（全 {reviewQuestions.length}{' '}
-                    問）および学習分析履歴（{studyHistory.length}{' '}
+                    保存されている復習問題集（全 {reviewQuestions.length}{' '}
+                    問）および学習データ分析（{studyHistory.length}{' '}
                     件）をすべて消去して初期化しますか？
                   </p>
                   <div className="flex items-center gap-3 shrink-0">
@@ -2420,10 +2453,7 @@ export default function App() {
 
         {/* VIEW 5: LEARNING ANALYTICS SCREEN */}
         {viewMode === 'analytics' && (
-          <LearningAnalyticsView
-            summary={analyticsSummary}
-            onGoHome={() => goToHome(null)}
-          />
+          <LearningAnalyticsView summary={analyticsSummary} />
         )}
       </main>
 

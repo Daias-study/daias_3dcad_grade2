@@ -6,6 +6,7 @@ import type {
   LearningAnalyticsSummary,
   ScatterPoint,
 } from '../utils/analyticsUtils';
+import { StudyCalendarPanel } from './StudyCalendarPanel';
 
 export type AnalyticsChartType =
   | 'bar'
@@ -24,6 +25,11 @@ interface ChartOption {
 }
 
 const CHART_OPTIONS: ChartOption[] = [
+  {
+    value: 'all',
+    label: '🗂️ すべてのグラフを一覧表示（全7種）',
+    subtitle: '7種類すべての基本グラフを縦に並べて確認します',
+  },
   {
     value: 'bar',
     label: '📊 棒グラフ（ジャンル別の正解率・習得率）',
@@ -59,16 +65,10 @@ const CHART_OPTIONS: ChartOption[] = [
     label: '🕸️ レーダーチャート（6ジャンルの強み・弱みバランス）',
     subtitle: '3次元CAD全6分野のバランスや得意・不得意を多角的に把握します',
   },
-  {
-    value: 'all',
-    label: '🗂️ すべてのグラフを一覧表示（全7種）',
-    subtitle: '7種類すべての基本グラフを縦に並べて確認します',
-  },
 ];
 
 interface LearningAnalyticsViewProps {
   summary: LearningAnalyticsSummary;
-  onGoHome: () => void;
 }
 
 function EmptyChartNotice({ message }: { message: string }) {
@@ -1483,9 +1483,8 @@ function RadarChartSection({ genreStats }: { genreStats: GenreStats[] }) {
 
 export function LearningAnalyticsView({
   summary,
-  onGoHome,
 }: LearningAnalyticsViewProps) {
-  const [selectedChart, setSelectedChart] = useState<AnalyticsChartType>('bar');
+  const [selectedChart, setSelectedChart] = useState<AnalyticsChartType>('all');
   const currentOption = useMemo(
     () =>
       CHART_OPTIONS.find((opt) => opt.value === selectedChart) ??
@@ -1630,6 +1629,9 @@ export function LearningAnalyticsView({
             </p>
           </div>
         </div>
+
+        {/* Study Calendar (Automatic Solving Time) */}
+        <StudyCalendarPanel dailyQuizStats={summary.dailyQuizStats} />
 
         {/* Dropdown Chart Selector */}
         <div className="rounded-xl border border-[#c5a059]/45 bg-[#120e16]/90 p-4 sm:p-5 space-y-4">
@@ -1777,17 +1779,6 @@ export function LearningAnalyticsView({
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Footer Action */}
-        <div className="flex justify-center pt-1">
-          <button
-            type="button"
-            onClick={onGoHome}
-            className="antique-btn px-7 py-3 rounded-xl text-sm font-bold cursor-pointer"
-          >
-            🗝️ ホームへ戻る
-          </button>
         </div>
       </div>
     </div>
