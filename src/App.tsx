@@ -1059,6 +1059,14 @@ export default function App() {
       exportTransferToBase64Url(reviewQuestions, studyHistory, quizDatasets),
     [reviewQuestions, studyHistory]
   );
+  const estimatedShareUrlLength = useMemo(() => {
+    const baseLen =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}?save=`.length
+        : 64;
+    return baseLen + transferCode.length;
+  }, [transferCode]);
+  const isShareUrlTooLong = estimatedShareUrlLength > 8000;
 
   const handleDownloadBackup = () => {
     playRadioButtonSfx('ui_click');
@@ -2386,7 +2394,11 @@ export default function App() {
                         document.execCommand('copy');
                         document.body.removeChild(tmp);
                       }
-                      showMessage('✦ 引継ぎURLをコピーしました。');
+                      showMessage(
+                        isShareUrlTooLong
+                          ? '✦ 引継ぎURLをコピーしました（※URLが長いため、開けない場合はファイル保存やコードコピーがおすすめです）。'
+                          : '✦ 引継ぎURLをコピーしました。'
+                      );
                     }}
                     className="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer"
                   >
@@ -2400,6 +2412,14 @@ export default function App() {
                     💾 ファイルで保存
                   </button>
                 </div>
+                {isShareUrlTooLong && (
+                  <p className="text-xs text-amber-200/95 bg-amber-950/45 border border-amber-500/45 rounded-lg px-3.5 py-2.5 leading-relaxed">
+                    ⚠️ 引継ぎURLが長くなっているため（約{' '}
+                    {estimatedShareUrlLength.toLocaleString()}{' '}
+                    文字）、ブラウザや共有アプリによってはURLから開けない場合があります。確実な引継ぎには「📋
+                    コードをコピー」または「💾 ファイルで保存」がおすすめです。
+                  </p>
+                )}
               </div>
 
               {/* 読み込み（インポート） */}
