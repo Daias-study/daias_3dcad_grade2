@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AntiqueRadioPlayer } from './components/AntiqueRadioPlayer';
 import { DiagramViewer } from './components/DiagramViewer';
 import { LearningAnalyticsView } from './components/LearningAnalyticsView';
+import { RandomQuizSetupView } from './components/RandomQuizSetupView';
 import { bgmTracks } from './data/bgmTracks';
 import { darkAcademiaLibraryScenes } from './data/libraryScenes';
 import { quizDatasets } from './data/quizDatasets';
 import type { QuizDataset, QuizQuestion, UserAnswer } from './types/quiz';
 import {
+  ALL_STUDY_GENRES,
   buildLearningAnalytics,
   classifyQuestionGenre,
   clearStudyHistory,
@@ -26,6 +28,10 @@ import {
   stopActivePowerOnNoise,
 } from './utils/radioSfx';
 import {
+  generateRandomQuizDataset,
+  type RandomQuizConfig,
+} from './utils/randomQuizUtils';
+import {
   buildBackupFileName,
   exportTransferToBackupFileContent,
   exportTransferToBase64Url,
@@ -37,11 +43,24 @@ import {
   type ImportedTransferData,
 } from './utils/transferUtils';
 
-type ViewMode = 'home' | 'quiz' | 'result' | 'transfer' | 'analytics';
+type ViewMode =
+  | 'home'
+  | 'quiz'
+  | 'result'
+  | 'transfer'
+  | 'analytics'
+  | 'random_setup';
 
 const SCROLL_NUMBERS = ['壱', '弐', '参', '肆', '伍', '陸', '漆', '捌', '玖', '拾'];
 const REVIEW_STORAGE_KEY = 'daia_3dcad_review_questions_v1';
 const REVIEW_DATASET_ID = 'review_wrong_questions';
+
+function formatCountdownMmSs(totalSec: number): string {
+  const safe = Math.max(0, Math.floor(totalSec));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 function loadStoredReviewQuestions(): QuizQuestion[] {
   try {
@@ -129,6 +148,20 @@ export default function App() {
   const [studyHistory, setStudyHistory] = useState<StudyAttemptRecord[]>(() =>
     loadStudyHistory()
   );
+  const [randomQuizConfig, setRandomQuizConfig] = useState<RandomQuizConfig>(
+    () => ({
+      orderMode: 'random',
+      questionCount: 10,
+      timeLimitMinutes: 0,
+      targetScope: 'all',
+      selectedGenres: [...ALL_STUDY_GENRES],
+    })
+  );
+  const [activeRandomConfig, setActiveRandomConfig] =
+    useState<RandomQuizConfig | null>(null);
+  const [quizTimeLimitSec, setQuizTimeLimitSec] = useState<number | null>(null);
+  const [quizRemainingSec, setQuizRemainingSec] = useState<number | null>(null);
+  const [quizTimedOut, setQuizTimedOut] = useState<boolean>(false);
 
   const [fillDraft, setFillDraft] = useState<string>('');
   const [multiFillDrafts, setMultiFillDrafts] = useState<string[]>([]);
@@ -631,6 +664,35 @@ export default function App() {
     showMessage('✦ テストモードを終了しました。');
   }, [showMessage, clearCustomVideo, clearCustomBgm]);
 
+  useEffect(() => {
+    if (
+      viewMode !== 'quiz' ||
+      quizTimeLimitSec === null ||
+      quizTimeLimitSec <= 0
+    ) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setQuizRemainingSec((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          window.clearInterval(intervalId);
+          playRadioButtonSfx('quiz_wrong');
+          setQuizTimedOut(true);
+          showMessage('⏰ 制限時間が終了しました。最終鑑定結果へ移動します。');
+          setViewMode('result');
+          changeRandomLibraryBackground();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [viewMode, quizTimeLimitSec, showMessage, changeRandomLibraryBackground]);
+
   const currentQuestion =
     currentDataset?.questions[currentIndex] ?? null;
   const savedAnswer: UserAnswer = userAnswers[currentIndex] ?? null;
@@ -783,6 +845,10 @@ export default function App() {
     playRadioButtonSfx('ui_page');
     setCurrentFolder(folderId);
     setViewMode('home');
+    setQuizTimeLimitSec(null);
+    setQuizRemainingSec(null);
+    setQuizTimedOut(false);
+    setActiveRandomConfig(null);
     setShowSecretInput(false);
     setSecretDraft('');
     keyBufferRef.current = '';
@@ -790,7 +856,13 @@ export default function App() {
     scrollToTop();
   };
 
-  const startQuizWithDataset = (dataset: QuizDataset) => {
+  const startQuizWithDataset = (
+    dataset: QuizDataset,
+    options?: {
+      timeLimitMinutes?: number;
+      randomConfig?: RandomQuizConfig | null;
+    }
+  ) => {
     setCurrentDataset(dataset);
     setCurrentIndex(0);
     setTestQuestionLimit(null);
@@ -799,6 +871,17 @@ export default function App() {
     setUserAnswers(new Array(dataset.questions.length).fill(null));
     setFillDraft('');
     setMultiFillDrafts([]);
+    setQuizTimedOut(false);
+    const limitMinutes = options?.timeLimitMinutes ?? 0;
+    if (limitMinutes > 0) {
+      const totalSec = limitMinutes * 60;
+      setQuizTimeLimitSec(totalSec);
+      setQuizRemainingSec(totalSec);
+    } else {
+      setQuizTimeLimitSec(null);
+      setQuizRemainingSec(null);
+    }
+    setActiveRandomConfig(options?.randomConfig ?? null);
     setViewMode('quiz');
     changeRandomLibraryBackground();
     scrollToTop();
@@ -1035,7 +1118,37 @@ export default function App() {
       startQuiz(REVIEW_DATASET_ID);
       return;
     }
+    if (activeRandomConfig) {
+      const { dataset } = generateRandomQuizDataset(
+        quizDatasets,
+        analyticsSummary,
+        activeRandomConfig
+      );
+      startQuizWithDataset(dataset, {
+        timeLimitMinutes: activeRandomConfig.timeLimitMinutes,
+        randomConfig: activeRandomConfig,
+      });
+      return;
+    }
     startQuizWithDataset(currentDataset);
+  };
+
+  const handleStartRandomQuiz = (config: RandomQuizConfig) => {
+    setRandomQuizConfig(config);
+    const { dataset, actualCount } = generateRandomQuizDataset(
+      quizDatasets,
+      analyticsSummary,
+      config
+    );
+    if (actualCount === 0 || dataset.questions.length === 0) {
+      showMessage('該当する問題が見つかりませんでした。分野設定をご確認ください。');
+      return;
+    }
+    playRadioButtonSfx('ui_page');
+    startQuizWithDataset(dataset, {
+      timeLimitMinutes: config.timeLimitMinutes,
+      randomConfig: config,
+    });
   };
 
   const groupedDatasets = quizDatasets.filter(
@@ -1730,7 +1843,41 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* 復習問題集カード（3番目） */}
+                {/* ランダム問題生成カード（3番目：学習データ分析と復習問題集の間） */}
+                <div
+                  onClick={() => {
+                    playRadioButtonSfx('ui_page');
+                    setViewMode('random_setup');
+                    changeRandomLibraryBackground();
+                    scrollToTop();
+                  }}
+                  className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
+                        御試みの書 参
+                      </span>
+                      <span className="text-xs text-[#d4af37] font-bold tracking-wider">
+                        問題数・制限時間・苦手/任意分野を選択可
+                      </span>
+                    </div>
+                    <h3 className="classic-title text-xl sm:text-2xl font-bold text-[#f3e5ab] group-hover:text-[#ffd700] transition">
+                      ランダム問題生成
+                    </h3>
+                    <p className="text-sm text-[#a69a8c] leading-relaxed">
+                      サイト内に収録されている問題から、ランダム出題の有無・出題数・制限時間・苦手分野のみ／任意の分野指定を選んで演習問題を作成します。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="antique-btn px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap flex items-center space-x-2 shrink-0 cursor-pointer"
+                  >
+                    <span>問題を設定 ▶</span>
+                  </button>
+                </div>
+
+                {/* 復習問題集カード（4番目） */}
                 <div
                   onClick={() => startQuiz(REVIEW_DATASET_ID)}
                   className="antique-card rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 cursor-pointer hover:border-[#ffd700] transition duration-300 group"
@@ -1738,7 +1885,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2.5">
                       <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
-                        御試みの書 参
+                        御試みの書 肆
                       </span>
                       <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                         全 {reviewQuestions.length} 問収録
@@ -1780,7 +1927,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2.5">
                       <span className="text-xs px-2.5 py-0.5 rounded bg-[#3a1c24] text-[#f3e5ab] border border-[#c5a059]/60 font-semibold tracking-wider">
-                        御試みの書 肆
+                        御試みの書 伍
                       </span>
                       <span className="text-xs text-[#d4af37] font-bold tracking-wider">
                         演習問題数：全 {totalGroupedQuestions} 問収録（
@@ -1805,7 +1952,7 @@ export default function App() {
                 {/* その他の独立ファイル */}
                 {standaloneDatasets.map((dataset, idx) => {
                   const scrollLabel =
-                    SCROLL_NUMBERS[idx + 4] ?? String(idx + 5);
+                    SCROLL_NUMBERS[idx + 5] ?? String(idx + 6);
                   return (
                     <div
                       key={dataset.id}
@@ -1935,6 +2082,19 @@ export default function App() {
                 ) : (
                   <span className="bg-[#2a1c30] px-4 py-1 rounded-full font-bold text-xs sm:text-sm text-[#f3e5ab] border border-[#c5a059]/60 shadow-inner">
                     第 {currentIndex + 1} 問 / 全 {effectiveTotal} 問
+                  </span>
+                )}
+                {quizRemainingSec !== null && (
+                  <span
+                    className={`px-3.5 py-1 rounded-full font-bold text-xs sm:text-sm border shadow-inner tabular-nums ${
+                      quizRemainingSec <= 30
+                        ? 'bg-[#3b151e] border-rose-400 text-rose-200'
+                        : quizRemainingSec <= 120
+                          ? 'bg-[#302112] border-amber-400 text-amber-200'
+                          : 'bg-[#1a1522] border-[#c5a059]/60 text-[#ffd700]'
+                    }`}
+                  >
+                    ⏱ 残り {formatCountdownMmSs(quizRemainingSec)}
                   </span>
                 )}
               </div>
@@ -2250,6 +2410,11 @@ export default function App() {
                 <p className="text-sm text-[#a69a8c]">
                   対象試験： {currentDataset.title}
                 </p>
+                {quizTimedOut && (
+                  <p className="text-xs sm:text-sm font-semibold text-amber-200 bg-amber-950/50 border border-amber-500/45 rounded-lg px-4 py-2 inline-block">
+                    ⏰ 制限時間が終了したため、解答を締め切りました。
+                  </p>
+                )}
               </div>
 
               <div className="bg-[#120e16] border border-[#c5a059]/50 rounded-xl p-6 max-w-lg mx-auto grid grid-cols-3 gap-4 shadow-inner">
@@ -2297,6 +2462,23 @@ export default function App() {
                       : '🗝️ ホームに戻る'}
                   </span>
                 </button>
+                {activeRandomConfig && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playRadioButtonSfx('ui_page');
+                      setQuizTimeLimitSec(null);
+                      setQuizRemainingSec(null);
+                      setQuizTimedOut(false);
+                      setViewMode('random_setup');
+                      changeRandomLibraryBackground();
+                      scrollToTop();
+                    }}
+                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>🎲 生成条件を変更する</span>
+                  </button>
+                )}
                 {incorrectQuestions.length > 0 && (
                   <button
                     type="button"
@@ -2591,6 +2773,17 @@ export default function App() {
         {/* VIEW 5: LEARNING ANALYTICS SCREEN */}
         {viewMode === 'analytics' && (
           <LearningAnalyticsView summary={analyticsSummary} />
+        )}
+
+        {/* VIEW 6: RANDOM QUIZ GENERATOR SETUP SCREEN */}
+        {viewMode === 'random_setup' && (
+          <RandomQuizSetupView
+            datasets={quizDatasets}
+            analyticsSummary={analyticsSummary}
+            initialConfig={randomQuizConfig}
+            onStart={handleStartRandomQuiz}
+            onBackHome={() => goToHome(null)}
+          />
         )}
       </main>
 
