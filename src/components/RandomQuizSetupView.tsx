@@ -9,6 +9,12 @@ import { playRadioButtonSfx } from '../utils/radioSfx';
 import {
   buildUniqueQuestionPool,
   detectWeakGenres,
+  OFFICIAL_EXAM_DOMAINS,
+  OFFICIAL_EXAM_PASS_DOMAIN_PCT,
+  OFFICIAL_EXAM_PASS_OVERALL_PCT,
+  OFFICIAL_EXAM_PER_DOMAIN,
+  OFFICIAL_EXAM_TIME_MINUTES,
+  OFFICIAL_EXAM_TOTAL_QUESTIONS,
   type RandomOrderMode,
   type RandomQuizConfig,
   type RandomTargetScope,
@@ -19,6 +25,7 @@ interface RandomQuizSetupViewProps {
   analyticsSummary: LearningAnalyticsSummary;
   initialConfig: RandomQuizConfig;
   onStart: (config: RandomQuizConfig) => void;
+  onStartOfficialExam: () => void;
   onBackHome: () => void;
 }
 
@@ -30,6 +37,7 @@ export function RandomQuizSetupView({
   analyticsSummary,
   initialConfig,
   onStart,
+  onStartOfficialExam,
   onBackHome,
 }: RandomQuizSetupViewProps) {
   const [orderMode, setOrderMode] = useState<RandomOrderMode>(
@@ -142,6 +150,55 @@ export function RandomQuizSetupView({
             問）から、条件に合わせて問題セットを作成します。
           </p>
         </div>
+
+        {/* 公式試験 完全再現モード */}
+        <section className="rounded-xl border border-[#d4af37]/65 bg-[#18121e]/95 p-5 space-y-4 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-bold tracking-[0.15em] text-[#d4af37]">
+                CBT本番形式シミュレーション
+              </p>
+              <h3 className="classic-title text-lg sm:text-xl font-bold text-[#f3e5ab] mt-0.5">
+                3次元CAD利用技術者試験 2級 完全再現モード
+              </h3>
+            </div>
+            <span className="text-xs font-bold text-[#ffd700] tabular-nums shrink-0">
+              {OFFICIAL_EXAM_TOTAL_QUESTIONS}問 ／ {OFFICIAL_EXAM_TIME_MINUTES}分
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-[#dfd7c8] leading-relaxed">
+            <div>
+              ・出題構成：公式4分野から各{OFFICIAL_EXAM_PER_DOMAIN}
+              問ずつランダム抽出（計{OFFICIAL_EXAM_TOTAL_QUESTIONS}問）
+            </div>
+            <div>
+              ・試験時間：{OFFICIAL_EXAM_TIME_MINUTES}
+              分（時間切れで自動採点・終了）
+            </div>
+            <div>
+              ・CBT方式：試験中は正誤非表示／見直しフラグ・問題番号パレットで自由移動
+            </div>
+            <div>
+              ・合格基準：各分野 {OFFICIAL_EXAM_PASS_DOMAIN_PCT}
+              %以上 かつ 総合 {OFFICIAL_EXAM_PASS_OVERALL_PCT}%以上
+            </div>
+          </div>
+
+          <div className="text-[11px] text-[#a69a8c] leading-relaxed">
+            対象4分野：{OFFICIAL_EXAM_DOMAINS.join(' ／ ')}
+          </div>
+
+          <div className="pt-1 flex justify-end">
+            <button
+              type="button"
+              onClick={onStartOfficialExam}
+              className="w-full sm:w-auto antique-btn px-7 py-3 rounded-xl text-sm font-bold transition shadow-lg cursor-pointer"
+            >
+              🎓 2級 本番完全再現モードを開始する（60問・60分）▶
+            </button>
+          </div>
+        </section>
 
         {/* 1. ランダムに生成するかどうか */}
         <section className="space-y-3 pt-5 border-t border-[#c5a059]/25">

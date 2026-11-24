@@ -10,6 +10,25 @@ import { getQuestionKey } from './transferUtils';
 export type RandomOrderMode = 'random' | 'sequential';
 export type RandomTargetScope = 'all' | 'weak' | 'custom';
 
+export type OfficialExamDomain =
+  | '3次元CADの概念'
+  | '3次元CADの機能と実用的モデリング手法'
+  | '3次元CADデータの管理と周辺知識'
+  | '3次元CADデータの活用';
+
+export const OFFICIAL_EXAM_DOMAINS: readonly OfficialExamDomain[] = [
+  '3次元CADの概念',
+  '3次元CADの機能と実用的モデリング手法',
+  '3次元CADデータの管理と周辺知識',
+  '3次元CADデータの活用',
+] as const;
+
+export const OFFICIAL_EXAM_TOTAL_QUESTIONS = 60;
+export const OFFICIAL_EXAM_TIME_MINUTES = 60;
+export const OFFICIAL_EXAM_PER_DOMAIN = 15;
+export const OFFICIAL_EXAM_PASS_OVERALL_PCT = 70;
+export const OFFICIAL_EXAM_PASS_DOMAIN_PCT = 50;
+
 export interface RandomQuizConfig {
   orderMode: RandomOrderMode;
   questionCount: number;
@@ -41,6 +60,45 @@ export function buildUniqueQuestionPool(
     }
   }
   return pool;
+}
+
+export function classifyOfficialExamDomain(
+  q: QuizQuestion
+): OfficialExamDomain {
+  if (q.diagram) {
+    return '3次元CADの機能と実用的モデリング手法';
+  }
+  const ans =
+    q.type === 'multi_fill'
+      ? q.blanks.map((b) => b.correctAnswer).join(' ')
+      : q.correctAnswer;
+  const corpus = `${q.question} ${ans} ${q.explanation} ${q.point ?? ''}`;
+
+  if (
+    /IGES|STEP|AP242|PDM|PLM|PDQ|品質|ヒーリング|標準化|ISO|JIS|チェックアウト|チェックイン|リビジョン|部品表|BOM|ハードウェア|CPU|GPU|メモリ|RAM|OS|ネットワーク|VPN|セキュリティ|バックアップ|ファイル形式|データ交換|中間ファイル|トレランス/.test(
+      corpus
+    )
+  ) {
+    return '3次元CADデータの管理と周辺知識';
+  }
+
+  if (
+    /CAE|FEM|有限要素|解析|CAM|NC|RP|3Dプリンタ|積層|光造形|粉末焼結|材料押出|STL|VRML|JT|XVL|DMU|デザインレビュー|リバース|点群|レンダリング|シェーディング|ラピッド|CG|活用|試作|シミュレーション/.test(
+      corpus
+    )
+  ) {
+    return '3次元CADデータの活用';
+  }
+
+  if (
+    /押し出し|回転|スイープ|ロフト|シェル|フィレット|面取り|抜き勾配|リブ|ボス|トリム|ステッチ|縫合|パターン|ミラー|アセンブリ|ボトムアップ|トップダウン|合致|拘束|フィーチャー|スケッチ|断面図|第三角法|かくれ線|自由度|干渉|アソシエィティブ/.test(
+      corpus
+    )
+  ) {
+    return '3次元CADの機能と実用的モデリング手法';
+  }
+
+  return '3次元CADの概念';
 }
 
 export function detectWeakGenres(
@@ -151,5 +209,60 @@ export function generateRandomQuizDataset(
     dataset,
     actualCount: chosen.length,
     targetGenres,
+  };
+}
+
+export function generateOfficialMockExam(datasets: QuizDataset[]): {
+  dataset: QuizDataset;
+  questionDomains: OfficialExamDomain[];
+  domainCounts: Record<OfficialExamDomain, number>;
+} {
+  const pool = buildUniqueQuestionPool(datasets);
+  const buckets: Record<OfficialExamDomain, QuizQuestion[]> = {
+    '3次元CADの概念': [],
+    '3次元CADの機能と実用的モデリング手法': [],
+    '3次元CADデータの管理と周辺知識': [],
+    '3次元CADデータの活用': [],
+  };
+
+  for (const item of pool) {
+    const domain = classifyOfficialExamDomain(item.question);
+    buckets[domain].push(item.question);
+  }
+
+  const picked: Array<{ question: QuizQuestion; domain: OfficialExamDomain }> =
+    [];
+  const domainCounts: Record<OfficialExamDomain, number> = {
+    '3次元CADの概念': 0,
+    '3次元CADの機能と実用的モデリング手法': 0,
+    '3次元CADデータの管理と周辺知識': 0,
+    '3次元CADデータの活用': 0,
+  };
+
+  for (const domain of OFFICIAL_EXAM_DOMAINS) {
+    const shuffledBucket = fisherYatesShuffle(buckets[domain]);
+    const selected = shuffledBucket.slice(0, OFFICIAL_EXAM_PER_DOMAIN);
+    domainCounts[domain] = selected.length;
+    for (const q of selected) {
+      picked.push({ question: q, domain });
+    }
+  }
+
+  const shuffledExam = fisherYatesShuffle(picked);
+  const questions = shuffledExam.map((item) => item.question);
+  const questionDomains = shuffledExam.map((item) => item.domain);
+
+  const dataset: QuizDataset = {
+    id: `official_mock_2kyu_${Date.now()}`,
+    title: '3次元CAD利用技術者試験2級 本番完全再現モード（CBT・60問60分）',
+    description:
+      '公式試験と同じく4分野各15問・全60問・制限時間60分のCBT形式で出題します。終了後に総合70%以上かつ各分野50%以上の合格基準で判定します。',
+    questions,
+  };
+
+  return {
+    dataset,
+    questionDomains,
+    domainCounts,
   };
 }

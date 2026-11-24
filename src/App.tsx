@@ -28,7 +28,12 @@ import {
   stopActivePowerOnNoise,
 } from './utils/radioSfx';
 import {
+  generateOfficialMockExam,
   generateRandomQuizDataset,
+  OFFICIAL_EXAM_DOMAINS,
+  OFFICIAL_EXAM_PASS_DOMAIN_PCT,
+  OFFICIAL_EXAM_PASS_OVERALL_PCT,
+  type OfficialExamDomain,
   type RandomQuizConfig,
 } from './utils/randomQuizUtils';
 import {
@@ -60,6 +65,30 @@ function formatCountdownMmSs(totalSec: number): string {
   const mins = Math.floor(safe / 60);
   const secs = safe % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function isCbtQuestionAnswered(ans: UserAnswer, q: QuizQuestion): boolean {
+  if (ans === null || ans === undefined) return false;
+  if (q.type === 'multi_fill') {
+    return (
+      Array.isArray(ans) &&
+      q.blanks.every((_, idx) => Boolean((ans[idx] ?? '').trim()))
+    );
+  }
+  return typeof ans === 'string' && ans.trim().length > 0;
+}
+
+function formatUserAnswerDisplay(ans: UserAnswer, q: QuizQuestion): string {
+  if (!isCbtQuestionAnswered(ans, q)) return '未解答';
+  if (Array.isArray(ans)) {
+    if (q.type === 'multi_fill') {
+      return q.blanks
+        .map((b, idx) => `${b.label}：${ans[idx] ?? ''}`)
+        .join(' ／ ');
+    }
+    return ans.join(' ／ ');
+  }
+  return String(ans);
 }
 
 function loadStoredReviewQuestions(): QuizQuestion[] {
@@ -159,6 +188,15 @@ export default function App() {
   );
   const [activeRandomConfig, setActiveRandomConfig] =
     useState<RandomQuizConfig | null>(null);
+  const [isCbtMode, setIsCbtMode] = useState<boolean>(false);
+  const [cbtQuestionDomains, setCbtQuestionDomains] = useState<
+    OfficialExamDomain[]
+  >([]);
+  const [cbtFlaggedIndices, setCbtFlaggedIndices] = useState<number[]>([]);
+  const [cbtConfirmFinish, setCbtConfirmFinish] = useState<boolean>(false);
+  const [cbtReviewFilter, setCbtReviewFilter] = useState<'all' | 'wrong'>(
+    'all'
+  );
   const [quizTimeLimitSec, setQuizTimeLimitSec] = useState<number | null>(null);
   const [quizRemainingSec, setQuizRemainingSec] = useState<number | null>(null);
   const [quizTimedOut, setQuizTimedOut] = useState<boolean>(false);
@@ -231,6 +269,8 @@ export default function App() {
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const keyBufferRef = useRef<string>('');
   const questionShownAtRef = useRef<number>(Date.now());
+  const cbtQuestionDurationsRef = useRef<number[]>([]);
+  const cbtFinalizedRef = useRef<boolean>(false);
 
   const changeRandomLibraryBackground = useCallback(() => {
     let nextIndex: number;
@@ -664,6 +704,131 @@ export default function App() {
     showMessage('✦ テストモードを終了しました。');
   }, [showMessage, clearCustomVideo, clearCustomBgm]);
 
+  const flushCbtCurrentQuestionDuration = useCallback(() => {
+    if (!isCbtMode) return;
+    const elapsedSec = Math.max(
+      1,
+      Math.round((Date.now() - questionShownAtRef.current) / 1000)
+    );
+    cbtQuestionDurationsRef.current[currentIndex] =
+      (cbtQuestionDurationsRef.current[currentIndex] ?? 0) + elapsedSec;
+    questionShownAtRef.current = Date.now();
+  }, [isCbtMode, currentIndex]);
+
+  const finalizeCbtExam = useCallback(
+    (timedOut: boolean) => {
+      if (cbtFinalizedRef.current || !currentDataset) return;
+      cbtFinalizedRef.current = true;
+      flushCbtCurrentQuestionDuration();
+
+      const questions = currentDataset.questions;
+      const now = Date.now();
+      const newAttempts: StudyAttemptRecord[] = [];
+      const wrongQuestions: QuizQuestion[] = [];
+      let correctTotal = 0;
+
+      const domainTotals: Record<
+        OfficialExamDomain,
+        { correct: number; total: number }
+      > = {
+        '3次元CADの概念': { correct: 0, total: 0 },
+        '3次元CADの機能と実用的モデリング手法': { correct: 0, total: 0 },
+        '3次元CADデータの管理と周辺知識': { correct: 0, total: 0 },
+        '3次元CADデータの活用': { correct: 0, total: 0 },
+      };
+
+      questions.forEach((q, idx) => {
+        const ans = userAnswers[idx] ?? null;
+        const answered = isCbtQuestionAnswered(ans, q);
+        const correct = isQuestionCorrect(ans, q);
+        if (correct) correctTotal += 1;
+        else wrongQuestions.push(q);
+
+        const dom = cbtQuestionDomains[idx];
+        if (dom) {
+          domainTotals[dom].total += 1;
+          if (correct) domainTotals[dom].correct += 1;
+        }
+
+        if (answered) {
+          const dur = Math.max(
+            1,
+            Math.min(300, cbtQuestionDurationsRef.current[idx] || 20)
+          );
+          newAttempts.push({
+            questionKey: getQuestionKey(q),
+            datasetId: currentDataset.id,
+            datasetTitle: currentDataset.title,
+            genre: classifyQuestionGenre(q),
+            isCorrect: correct,
+            durationSec: dur,
+            timestamp: now + idx,
+          });
+        }
+      });
+
+      if (newAttempts.length > 0) {
+        setStudyHistory((prev) => {
+          const updated = [...prev, ...newAttempts];
+          saveStudyHistory(updated);
+          return updated;
+        });
+      }
+
+      if (wrongQuestions.length > 0) {
+        setReviewQuestions((prev) => {
+          const seen = new Set(prev.map(getQuestionKey));
+          let updated = prev;
+          for (const wq of wrongQuestions) {
+            const key = getQuestionKey(wq);
+            if (!seen.has(key)) {
+              seen.add(key);
+              updated = [...updated, wq];
+            }
+          }
+          if (updated !== prev) {
+            saveStoredReviewQuestions(updated);
+          }
+          return updated;
+        });
+      }
+
+      const overallPct =
+        questions.length > 0 ? (correctTotal / questions.length) * 100 : 0;
+      const allDomainsPassed = OFFICIAL_EXAM_DOMAINS.every((dom) => {
+        const d = domainTotals[dom];
+        return d.total === 0 || (d.correct / d.total) * 100 >= OFFICIAL_EXAM_PASS_DOMAIN_PCT;
+      });
+      const passed =
+        overallPct >= OFFICIAL_EXAM_PASS_OVERALL_PCT && allDomainsPassed;
+
+      playRadioButtonSfx(passed && !timedOut ? 'quiz_correct' : 'quiz_wrong');
+      setCbtConfirmFinish(false);
+      setCbtReviewFilter('all');
+      setQuizTimedOut(timedOut);
+      if (timedOut) {
+        showMessage('⏰ 制限時間（60分）が終了したため、自動採点しました。');
+      } else {
+        showMessage(
+          passed
+            ? '✦ 試験終了：見事、公式合格基準を達成しました！'
+            : '✦ 試験終了：採点結果を表示します。'
+        );
+      }
+      setViewMode('result');
+      changeRandomLibraryBackground();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [
+      currentDataset,
+      userAnswers,
+      cbtQuestionDomains,
+      flushCbtCurrentQuestionDuration,
+      showMessage,
+      changeRandomLibraryBackground,
+    ]
+  );
+
   useEffect(() => {
     if (
       viewMode !== 'quiz' ||
@@ -675,28 +840,49 @@ export default function App() {
 
     const intervalId = window.setInterval(() => {
       setQuizRemainingSec((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          window.clearInterval(intervalId);
-          playRadioButtonSfx('quiz_wrong');
-          setQuizTimedOut(true);
-          showMessage('⏰ 制限時間が終了しました。最終鑑定結果へ移動します。');
-          setViewMode('result');
-          changeRandomLibraryBackground();
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-          return 0;
-        }
+        if (prev === null || prev <= 0) return prev;
         return prev - 1;
       });
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [viewMode, quizTimeLimitSec, showMessage, changeRandomLibraryBackground]);
+  }, [viewMode, quizTimeLimitSec]);
+
+  useEffect(() => {
+    if (
+      viewMode !== 'quiz' ||
+      quizTimeLimitSec === null ||
+      quizTimeLimitSec <= 0 ||
+      quizRemainingSec !== 0
+    ) {
+      return;
+    }
+
+    if (isCbtMode) {
+      finalizeCbtExam(true);
+      return;
+    }
+
+    playRadioButtonSfx('quiz_wrong');
+    setQuizTimedOut(true);
+    showMessage('⏰ 制限時間が終了しました。最終鑑定結果へ移動します。');
+    setViewMode('result');
+    changeRandomLibraryBackground();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [
+    viewMode,
+    quizTimeLimitSec,
+    quizRemainingSec,
+    isCbtMode,
+    finalizeCbtExam,
+    showMessage,
+    changeRandomLibraryBackground,
+  ]);
 
   const currentQuestion =
     currentDataset?.questions[currentIndex] ?? null;
   const savedAnswer: UserAnswer = userAnswers[currentIndex] ?? null;
-  const isAnswered = savedAnswer !== null;
+  const isAnswered = !isCbtMode && savedAnswer !== null;
 
   useEffect(() => {
     if (viewMode !== 'quiz' || !currentQuestion) return;
@@ -713,10 +899,12 @@ export default function App() {
         setMultiFillDrafts(savedAnswer);
       } else {
         setMultiFillDrafts(new Array(currentQuestion.blanks.length).fill(''));
-        const timer = window.setTimeout(() => {
-          multiInputRefs.current[0]?.focus();
-        }, 50);
-        return () => window.clearTimeout(timer);
+        if (!currentQuestion.wordBank) {
+          const timer = window.setTimeout(() => {
+            multiInputRefs.current[0]?.focus();
+          }, 50);
+          return () => window.clearTimeout(timer);
+        }
       }
     }
   }, [viewMode, currentIndex, currentQuestion, savedAnswer, isAnswered]);
@@ -849,6 +1037,10 @@ export default function App() {
     setQuizRemainingSec(null);
     setQuizTimedOut(false);
     setActiveRandomConfig(null);
+    setIsCbtMode(false);
+    setCbtQuestionDomains([]);
+    setCbtFlaggedIndices([]);
+    setCbtConfirmFinish(false);
     setShowSecretInput(false);
     setSecretDraft('');
     keyBufferRef.current = '';
@@ -861,6 +1053,8 @@ export default function App() {
     options?: {
       timeLimitMinutes?: number;
       randomConfig?: RandomQuizConfig | null;
+      cbtMode?: boolean;
+      cbtDomains?: OfficialExamDomain[];
     }
   ) => {
     setCurrentDataset(dataset);
@@ -872,6 +1066,16 @@ export default function App() {
     setFillDraft('');
     setMultiFillDrafts([]);
     setQuizTimedOut(false);
+    const cbt = Boolean(options?.cbtMode);
+    setIsCbtMode(cbt);
+    setCbtQuestionDomains(options?.cbtDomains ?? []);
+    setCbtFlaggedIndices([]);
+    setCbtConfirmFinish(false);
+    setCbtReviewFilter('all');
+    cbtQuestionDurationsRef.current = new Array(dataset.questions.length).fill(
+      0
+    );
+    cbtFinalizedRef.current = false;
     const limitMinutes = options?.timeLimitMinutes ?? 0;
     if (limitMinutes > 0) {
       const totalSec = limitMinutes * 60;
@@ -983,9 +1187,13 @@ export default function App() {
     if (emptyIdx !== -1) {
       playRadioButtonSfx('ui_click');
       showMessage(
-        `${currentQuestion.blanks[emptyIdx].label} の空欄に用語を入力してください。`
+        currentQuestion.wordBank
+          ? `${currentQuestion.blanks[emptyIdx].label} に入る語句を選択してください。`
+          : `${currentQuestion.blanks[emptyIdx].label} の空欄に用語を入力してください。`
       );
-      multiInputRefs.current[emptyIdx]?.focus();
+      if (!currentQuestion.wordBank) {
+        multiInputRefs.current[emptyIdx]?.focus();
+      }
       return;
     }
     submitAnswer(vals);
@@ -993,12 +1201,28 @@ export default function App() {
 
   const nextQuestion = () => {
     if (!currentDataset || !currentQuestion) return;
+    if (isCbtMode) {
+      playRadioButtonSfx('ui_page');
+      if (currentIndex < effectiveTotal - 1) {
+        flushCbtCurrentQuestionDuration();
+        setCurrentIndex((prev) => prev + 1);
+        changeRandomLibraryBackground();
+        scrollToTop();
+      } else {
+        setCbtConfirmFinish(true);
+      }
+      return;
+    }
+
     if (!isAnswered) {
       playRadioButtonSfx('ui_click');
       showMessage(
-        currentQuestion.type === 'fill' || currentQuestion.type === 'multi_fill'
-          ? '空欄に用語を入力して「解答する」を押してください。'
-          : 'いずれかの選択肢を1つお選びください。'
+        currentQuestion.type === 'multi_fill' && currentQuestion.wordBank
+          ? '解答群から語句を選んで「解答する」を押してください。'
+          : currentQuestion.type === 'fill' ||
+              currentQuestion.type === 'multi_fill'
+            ? '空欄に用語を入力して「解答する」を押してください。'
+            : 'いずれかの選択肢を1つお選びください。'
       );
       return;
     }
@@ -1018,10 +1242,33 @@ export default function App() {
   const prevQuestion = () => {
     if (currentIndex > 0) {
       playRadioButtonSfx('ui_page');
+      if (isCbtMode) {
+        flushCbtCurrentQuestionDuration();
+      }
       setCurrentIndex((prev) => prev - 1);
       changeRandomLibraryBackground();
       scrollToTop();
     }
+  };
+
+  const jumpToCbtQuestion = (targetIdx: number) => {
+    if (!currentDataset || targetIdx < 0 || targetIdx >= effectiveTotal) return;
+    playRadioButtonSfx('ui_click');
+    if (targetIdx !== currentIndex) {
+      flushCbtCurrentQuestionDuration();
+      setCurrentIndex(targetIdx);
+      changeRandomLibraryBackground();
+      scrollToTop();
+    }
+  };
+
+  const toggleCbtFlag = (targetIdx: number) => {
+    playRadioButtonSfx('ui_click');
+    setCbtFlaggedIndices((prev) =>
+      prev.includes(targetIdx)
+        ? prev.filter((i) => i !== targetIdx)
+        : [...prev, targetIdx]
+    );
   };
 
   const applyJumpToNumber = (num: number) => {
@@ -1118,6 +1365,10 @@ export default function App() {
       startQuiz(REVIEW_DATASET_ID);
       return;
     }
+    if (isCbtMode) {
+      handleStartOfficialExam();
+      return;
+    }
     if (activeRandomConfig) {
       const { dataset } = generateRandomQuizDataset(
         quizDatasets,
@@ -1151,10 +1402,31 @@ export default function App() {
     });
   };
 
+  const handleStartOfficialExam = () => {
+    const { dataset, questionDomains } = generateOfficialMockExam(quizDatasets);
+    if (dataset.questions.length === 0) {
+      showMessage('模試問題を生成できませんでした。');
+      return;
+    }
+    playRadioButtonSfx('ui_page');
+    startQuizWithDataset(dataset, {
+      timeLimitMinutes: 60,
+      randomConfig: null,
+      cbtMode: true,
+      cbtDomains: questionDomains,
+    });
+  };
+
   const groupedDatasets = quizDatasets.filter(
     (d) => d.group === 'practice_set_1_2'
   );
-  const standaloneDatasets = quizDatasets.filter((d) => !d.group);
+  const standaloneDatasets = quizDatasets
+    .filter((d) => !d.group)
+    .sort((a, b) => {
+      if (a.id === 'long_passage_2kyu_10') return -1;
+      if (b.id === 'long_passage_2kyu_10') return 1;
+      return 0;
+    });
   const totalGroupedQuestions = groupedDatasets.reduce(
     (sum, d) => sum + d.questions.length,
     0
@@ -1311,6 +1583,61 @@ export default function App() {
   const incorrectCount = incorrectQuestions.length;
   const percentage =
     totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+
+  const cbtScoreSummary = useMemo(() => {
+    if (!isCbtMode || viewMode !== 'result' || !currentDataset) return null;
+    const domainMap: Record<
+      OfficialExamDomain,
+      { correct: number; total: number }
+    > = {
+      '3次元CADの概念': { correct: 0, total: 0 },
+      '3次元CADの機能と実用的モデリング手法': { correct: 0, total: 0 },
+      '3次元CADデータの管理と周辺知識': { correct: 0, total: 0 },
+      '3次元CADデータの活用': { correct: 0, total: 0 },
+    };
+    activeQuestions.forEach((q, idx) => {
+      const dom = cbtQuestionDomains[idx];
+      if (!dom) return;
+      domainMap[dom].total += 1;
+      if (isQuestionCorrect(userAnswers[idx], q)) {
+        domainMap[dom].correct += 1;
+      }
+    });
+    const domainRows = OFFICIAL_EXAM_DOMAINS.map((domain) => {
+      const item = domainMap[domain];
+      const pct =
+        item.total > 0
+          ? Math.round((item.correct / item.total) * 1000) / 10
+          : 0;
+      return {
+        domain,
+        correct: item.correct,
+        total: item.total,
+        pct,
+        passed: pct >= OFFICIAL_EXAM_PASS_DOMAIN_PCT,
+      };
+    });
+    const overallPctExact =
+      totalCount > 0 ? Math.round((correctCount / totalCount) * 1000) / 10 : 0;
+    const overallPassed = overallPctExact >= OFFICIAL_EXAM_PASS_OVERALL_PCT;
+    const allDomainsPassed = domainRows.every((d) => d.passed);
+    return {
+      overallPctExact,
+      overallPassed,
+      allDomainsPassed,
+      isOfficialPassed: overallPassed && allDomainsPassed,
+      domainRows,
+    };
+  }, [
+    isCbtMode,
+    viewMode,
+    currentDataset,
+    activeQuestions,
+    cbtQuestionDomains,
+    userAnswers,
+    totalCount,
+    correctCount,
+  ]);
 
   const retryIncorrectOnly = () => {
     if (!currentDataset || incorrectQuestions.length === 0) return;
@@ -2103,8 +2430,25 @@ export default function App() {
             {/* Question Card */}
             <div className="antique-card rounded-2xl p-6 sm:p-8 space-y-6">
               <div className="space-y-3">
-                <div className="inline-flex items-center space-x-2 text-xs uppercase tracking-widest font-bold text-[#c5a059] bg-[#211926] px-3 py-1 rounded border border-[#c5a059]/40">
-                  <span>❖ 問題 {currentIndex + 1}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center space-x-2 text-xs uppercase tracking-widest font-bold text-[#c5a059] bg-[#211926] px-3 py-1 rounded border border-[#c5a059]/40">
+                    <span>❖ 問題 {currentIndex + 1}</span>
+                  </div>
+                  {isCbtMode && (
+                    <button
+                      type="button"
+                      onClick={() => toggleCbtFlag(currentIndex)}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer ${
+                        cbtFlaggedIndices.includes(currentIndex)
+                          ? 'border-amber-400 bg-amber-950/60 text-amber-200'
+                          : 'border-[#c5a059]/40 bg-[#1a151f] hover:bg-[#2a2133] text-[#c9beae]'
+                      }`}
+                    >
+                      {cbtFlaggedIndices.includes(currentIndex)
+                        ? '🚩 見直し中（解除）'
+                        : '🏳️ 後で見直す'}
+                    </button>
+                  )}
                 </div>
 
                 {currentQuestion.diagram && (
@@ -2113,7 +2457,14 @@ export default function App() {
                   </div>
                 )}
 
-                <h3 className="text-lg sm:text-xl font-bold text-[#f5efe6] leading-relaxed">
+                <h3
+                  className={
+                    currentQuestion.type === 'multi_fill' &&
+                    currentQuestion.wordBank
+                      ? 'text-sm sm:text-base font-medium text-[#f5efe6] leading-relaxed whitespace-pre-line'
+                      : 'text-lg sm:text-xl font-bold text-[#f5efe6] leading-relaxed whitespace-pre-line'
+                  }
+                >
                   {currentQuestion.question}
                 </h3>
               </div>
@@ -2121,7 +2472,84 @@ export default function App() {
               {/* Options / Inputs */}
               <div className="space-y-3">
                 {currentQuestion.type === 'multi_fill' ? (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
+                    {currentQuestion.wordBank &&
+                      currentQuestion.wordBank.length > 0 && (
+                        <div className="rounded-xl border border-[#c5a059]/35 bg-[#120e16]/90 p-4 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-[#d4af37] tracking-wider">
+                              解答群
+                            </span>
+                            {!isAnswered && (
+                              <span className="text-[11px] text-[#a69a8c]">
+                                語句をクリックすると未選択の空欄に順番に入力されます
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {currentQuestion.wordBank.map((term, wIdx) => {
+                              const usedInBlanks = multiFillDrafts
+                                .map((val, idx) =>
+                                  val === term
+                                    ? currentQuestion.blanks[idx]?.label
+                                    : null
+                                )
+                                .filter((lbl): lbl is string => Boolean(lbl));
+
+                              return (
+                                <button
+                                  key={term}
+                                  type="button"
+                                  disabled={isAnswered}
+                                  onClick={() => {
+                                    playRadioButtonSfx('ui_click');
+                                    const next =
+                                      multiFillDrafts.length ===
+                                      currentQuestion.blanks.length
+                                        ? [...multiFillDrafts]
+                                        : new Array(
+                                            currentQuestion.blanks.length
+                                          ).fill('');
+                                    const targetIdx = next.findIndex(
+                                      (v) => !v.trim()
+                                    );
+                                    if (targetIdx !== -1) {
+                                      next[targetIdx] = term;
+                                    } else if (next.length > 0) {
+                                      next[next.length - 1] = term;
+                                    }
+                                    setMultiFillDrafts(next);
+                                    if (isCbtMode) {
+                                      setUserAnswers((ansPrev) => {
+                                        const copy = [...ansPrev];
+                                        copy[currentIndex] = next;
+                                        return copy;
+                                      });
+                                    }
+                                  }}
+                                  className={`px-3 py-2 rounded-lg border text-left text-xs font-semibold transition flex items-center justify-between gap-2 ${
+                                    isAnswered
+                                      ? 'border-[#c5a059]/25 bg-[#17121c] text-[#c9beae] cursor-default'
+                                      : usedInBlanks.length > 0
+                                        ? 'border-[#ffd700]/75 bg-[#261b2b] text-[#f3e5ab] cursor-pointer'
+                                        : 'border-[#c5a059]/35 bg-[#191420] hover:border-[#ffd700] hover:bg-[#241b2c] text-[#f5efe6] cursor-pointer'
+                                  }`}
+                                >
+                                  <span className="truncate">
+                                    [{wIdx + 1}] {term}
+                                  </span>
+                                  {usedInBlanks.length > 0 && (
+                                    <span className="text-[10px] text-[#ffd700] shrink-0">
+                                      ({usedInBlanks.join('・')})
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                     {currentQuestion.blanks.map((blank, bIdx) => {
                       const userVal =
                         isAnswered && Array.isArray(savedAnswer)
@@ -2137,51 +2565,108 @@ export default function App() {
                           <span className="w-9 h-9 rounded-lg bg-[#261829] border border-[#c5a059]/60 text-[#f3e5ab] font-bold flex items-center justify-center shrink-0 text-sm">
                             {blank.label}
                           </span>
-                          <input
-                            ref={(el) => {
-                              multiInputRefs.current[bIdx] = el;
-                            }}
-                            type="text"
-                            value={userVal}
-                            disabled={isAnswered}
-                            placeholder={
-                              blank.placeholder ?? `${blank.label}に入る用語を入力`
-                            }
-                            autoComplete="off"
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setMultiFillDrafts((prev) => {
-                                const next = [...prev];
+                          {currentQuestion.wordBank &&
+                          currentQuestion.wordBank.length > 0 ? (
+                            <select
+                              aria-label={`${blank.label}の解答を選択`}
+                              value={userVal}
+                              disabled={isAnswered}
+                              onChange={(e) => {
+                                playRadioButtonSfx('ui_click');
+                                const val = e.target.value;
+                                const next =
+                                  multiFillDrafts.length ===
+                                  currentQuestion.blanks.length
+                                    ? [...multiFillDrafts]
+                                    : new Array(
+                                        currentQuestion.blanks.length
+                                      ).fill('');
                                 next[bIdx] = val;
-                                return next;
-                              });
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                if (
-                                  bIdx <
-                                  currentQuestion.blanks.length - 1
-                                ) {
-                                  multiInputRefs.current[bIdx + 1]?.focus();
-                                } else {
-                                  handleMultiFillSubmit();
+                                setMultiFillDrafts(next);
+                                if (isCbtMode) {
+                                  setUserAnswers((ansPrev) => {
+                                    const copy = [...ansPrev];
+                                    copy[currentIndex] = next;
+                                    return copy;
+                                  });
                                 }
+                              }}
+                              className={`flex-grow px-4 py-3 rounded-xl bg-[#120e16] border text-[#f5efe6] focus:outline-none focus:border-[#ffd700] focus:ring-2 focus:ring-[#d4af37]/30 text-sm sm:text-base font-bold tracking-wide cursor-pointer ${
+                                isAnswered
+                                  ? blankOk
+                                    ? 'border-2 border-emerald-500 bg-emerald-950/50 text-emerald-200'
+                                    : 'border-2 border-rose-500 bg-rose-950/50 text-rose-200'
+                                  : 'border-[#c5a059]/60'
+                              }`}
+                            >
+                              <option value="">
+                                ── （{blank.label}）に当てはまる語句を選択 ──
+                              </option>
+                              {currentQuestion.wordBank.map((term, wIdx) => (
+                                <option key={term} value={term}>
+                                  [{wIdx + 1}] {term}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              ref={(el) => {
+                                multiInputRefs.current[bIdx] = el;
+                              }}
+                              type="text"
+                              value={userVal}
+                              disabled={isAnswered}
+                              placeholder={
+                                blank.placeholder ??
+                                `${blank.label}に入る用語を入力`
                               }
-                            }}
-                            className={`flex-grow px-4 py-3 rounded-xl bg-[#120e16] border text-[#f5efe6] placeholder-[#7d7267] focus:outline-none focus:border-[#ffd700] focus:ring-2 focus:ring-[#d4af37]/30 text-base font-bold tracking-wide ${
-                              isAnswered
-                                ? blankOk
-                                  ? 'border-2 border-emerald-500 bg-emerald-950/50 text-emerald-200'
-                                  : 'border-2 border-rose-500 bg-rose-950/50 text-rose-200'
-                                : 'border-[#c5a059]/60'
-                            }`}
-                          />
+                              autoComplete="off"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const next =
+                                  multiFillDrafts.length ===
+                                  currentQuestion.blanks.length
+                                    ? [...multiFillDrafts]
+                                    : new Array(
+                                        currentQuestion.blanks.length
+                                      ).fill('');
+                                next[bIdx] = val;
+                                setMultiFillDrafts(next);
+                                if (isCbtMode) {
+                                  setUserAnswers((ansPrev) => {
+                                    const copy = [...ansPrev];
+                                    copy[currentIndex] = next;
+                                    return copy;
+                                  });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !isCbtMode) {
+                                  e.preventDefault();
+                                  if (
+                                    bIdx <
+                                    currentQuestion.blanks.length - 1
+                                  ) {
+                                    multiInputRefs.current[bIdx + 1]?.focus();
+                                  } else {
+                                    handleMultiFillSubmit();
+                                  }
+                                }
+                              }}
+                              className={`flex-grow px-4 py-3 rounded-xl bg-[#120e16] border text-[#f5efe6] placeholder-[#7d7267] focus:outline-none focus:border-[#ffd700] focus:ring-2 focus:ring-[#d4af37]/30 text-base font-bold tracking-wide ${
+                                isAnswered
+                                  ? blankOk
+                                    ? 'border-2 border-emerald-500 bg-emerald-950/50 text-emerald-200'
+                                    : 'border-2 border-rose-500 bg-rose-950/50 text-rose-200'
+                                  : 'border-[#c5a059]/60'
+                              }`}
+                            />
+                          )}
                         </div>
                       );
                     })}
 
-                    {!isAnswered && (
+                    {!isAnswered && !isCbtMode && (
                       <button
                         type="button"
                         onClick={handleMultiFillSubmit}
@@ -2207,9 +2692,19 @@ export default function App() {
                           currentQuestion.placeholder ?? '用語を入力してください'
                         }
                         autoComplete="off"
-                        onChange={(e) => setFillDraft(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFillDraft(val);
+                          if (isCbtMode) {
+                            setUserAnswers((prev) => {
+                              const next = [...prev];
+                              next[currentIndex] = val.trim() ? val : null;
+                              return next;
+                            });
+                          }
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
+                          if (e.key === 'Enter' && !isCbtMode) {
                             e.preventDefault();
                             handleFillSubmit();
                           }
@@ -2222,18 +2717,20 @@ export default function App() {
                             : 'border-[#c5a059]/60'
                         }`}
                       />
-                      <button
-                        type="button"
-                        disabled={isAnswered}
-                        onClick={handleFillSubmit}
-                        className={`antique-btn px-6 py-3.5 rounded-xl font-bold text-sm sm:text-base whitespace-nowrap shrink-0 ${
-                          isAnswered
-                            ? 'opacity-50 cursor-not-allowed'
-                            : 'cursor-pointer'
-                        }`}
-                      >
-                        ✦ 解答する
-                      </button>
+                      {!isCbtMode && (
+                        <button
+                          type="button"
+                          disabled={isAnswered}
+                          onClick={handleFillSubmit}
+                          className={`antique-btn px-6 py-3.5 rounded-xl font-bold text-sm sm:text-base whitespace-nowrap shrink-0 ${
+                            isAnswered
+                              ? 'opacity-50 cursor-not-allowed'
+                              : 'cursor-pointer'
+                          }`}
+                        >
+                          ✦ 解答する
+                        </button>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -2242,10 +2739,14 @@ export default function App() {
                     const isCorrectOpt = opt === currentQuestion.correctAnswer;
                     const isSelectedWrong =
                       isAnswered && savedAnswer === opt && !isCorrectOpt;
+                    const isCbtSelected = isCbtMode && savedAnswer === opt;
 
                     let btnClass =
                       'antique-option w-full text-left p-4 rounded-xl font-medium flex items-center justify-between transition cursor-pointer';
-                    if (isAnswered) {
+                    if (isCbtSelected) {
+                      btnClass =
+                        'w-full text-left p-4 rounded-xl font-bold flex items-center justify-between border-2 border-[#ffd700] bg-[#2a1d2e] text-[#f3e5ab] shadow-[0_0_12px_rgba(255,215,0,0.22)] cursor-pointer';
+                    } else if (isAnswered) {
                       if (isCorrectOpt) {
                         btnClass =
                           'w-full text-left p-4 rounded-xl font-bold flex items-center justify-between border-2 border-emerald-500/80 bg-emerald-950/70 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.25)]';
@@ -2263,7 +2764,18 @@ export default function App() {
                         key={`${currentIndex}-${idx}`}
                         type="button"
                         disabled={isAnswered}
-                        onClick={() => submitAnswer(opt)}
+                        onClick={() => {
+                          if (isCbtMode) {
+                            playRadioButtonSfx('ui_click');
+                            setUserAnswers((prev) => {
+                              const next = [...prev];
+                              next[currentIndex] = opt;
+                              return next;
+                            });
+                            return;
+                          }
+                          submitAnswer(opt);
+                        }}
                         className={btnClass}
                       >
                         <span className="flex items-start space-x-3">
@@ -2272,6 +2784,11 @@ export default function App() {
                           </span>
                           <span className="leading-snug">{opt}</span>
                         </span>
+                        {isCbtSelected && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-[#3a2640] text-[#ffd700] border border-[#d4af37]/60 ml-2 shrink-0">
+                            選択中
+                          </span>
+                        )}
                         {isAnswered && isCorrectOpt && (
                           <span className="text-xs px-2 py-0.5 rounded bg-emerald-800/80 text-emerald-100 ml-2 shrink-0">
                             正解
@@ -2351,7 +2868,9 @@ export default function App() {
                     <span className="text-xs uppercase tracking-wider text-[#d4af37] font-bold block mb-1">
                       ✦ 解説
                     </span>
-                    <p>{currentQuestion.explanation}</p>
+                    <p className="whitespace-pre-line">
+                      {currentQuestion.explanation}
+                    </p>
                     {currentQuestion.point && (
                       <div className="mt-3 p-3.5 rounded-lg bg-[#1a141e]/90 border border-[#c5a059]/50 text-[#f3e5ab]">
                         <span className="text-xs tracking-wider text-[#ffd700] font-bold block mb-1">
@@ -2368,7 +2887,7 @@ export default function App() {
             </div>
 
             {/* Navigation Buttons */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <button
                 type="button"
                 onClick={prevQuestion}
@@ -2381,6 +2900,20 @@ export default function App() {
               >
                 <span>◀ 戻る</span>
               </button>
+
+              {isCbtMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playRadioButtonSfx('ui_click');
+                    setCbtConfirmFinish(true);
+                  }}
+                  className="px-5 py-3 rounded-xl border border-emerald-500/60 bg-[#12221b] hover:bg-[#193026] text-emerald-200 font-bold text-sm transition shadow cursor-pointer"
+                >
+                  📋 試験を終了して採点する
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={nextQuestion}
@@ -2388,11 +2921,110 @@ export default function App() {
               >
                 <span>
                   {currentIndex >= effectiveTotal - 1
-                    ? '✦ 最終結果へ ✦'
+                    ? isCbtMode
+                      ? '✦ 採点確認へ ✦'
+                      : '✦ 最終結果へ ✦'
                     : '次へ ▶'}
                 </span>
               </button>
             </div>
+
+            {/* CBT Finish Confirmation */}
+            {isCbtMode && cbtConfirmFinish && (
+              <div className="antique-card rounded-2xl p-5 border border-[#ffd700]/70 space-y-3 animate-fadeIn">
+                {(() => {
+                  const answeredCount = activeQuestions.filter((q, idx) =>
+                    isCbtQuestionAnswered(userAnswers[idx], q)
+                  ).length;
+                  const unansweredCount = effectiveTotal - answeredCount;
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-[#f3e5ab]">
+                        CBT試験を終了して採点しますか？
+                      </p>
+                      <p className="text-xs text-[#dfd7c8] tabular-nums">
+                        解答済み：{answeredCount} / {effectiveTotal} 問 ／ 未解答：
+                        {unansweredCount} 問 ／ 見直しフラグ：
+                        {cbtFlaggedIndices.length} 問
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => finalizeCbtExam(false)}
+                          className="antique-btn px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold cursor-pointer"
+                        >
+                          はい、採点して結果を見る
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playRadioButtonSfx('ui_click');
+                            setCbtConfirmFinish(false);
+                          }}
+                          className="px-5 py-2.5 rounded-xl border border-[#c5a059]/45 bg-[#1a151f] hover:bg-[#2a2133] text-[#dfd7c8] text-xs sm:text-sm font-bold transition cursor-pointer"
+                        >
+                          試験に戻る
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* CBT Question Number Palette */}
+            {isCbtMode && (
+              <div className="antique-card rounded-2xl p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-[#d4af37]">
+                    CBT 問題番号パレット（クリックで各問へ移動）
+                  </span>
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#a69a8c]">
+                    <span>金枠：現在</span>
+                    <span className="text-emerald-300">緑：解答済</span>
+                    <span>暗色：未解答</span>
+                    <span className="text-amber-300">🚩：見直し</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
+                  {activeQuestions.map((q, idx) => {
+                    const answered = isCbtQuestionAnswered(
+                      userAnswers[idx],
+                      q
+                    );
+                    const flagged = cbtFlaggedIndices.includes(idx);
+                    const isCurrent = idx === currentIndex;
+                    return (
+                      <button
+                        key={`cbt-nav-${idx}`}
+                        type="button"
+                        onClick={() => jumpToCbtQuestion(idx)}
+                        className={`relative py-2 rounded-lg border text-xs font-bold tabular-nums transition cursor-pointer ${
+                          isCurrent
+                            ? 'border-2 border-[#ffd700] bg-[#33223a] text-[#ffd700]'
+                            : flagged
+                              ? 'border-amber-400/75 bg-amber-950/45 text-amber-200 hover:border-[#ffd700]'
+                              : answered
+                                ? 'border-emerald-500/55 bg-[#12241c] text-emerald-200 hover:border-[#ffd700]'
+                                : 'border-[#c5a059]/25 bg-[#141019] text-[#9e9285] hover:border-[#c5a059]/60 hover:text-[#f3e5ab]'
+                        }`}
+                      >
+                        {idx + 1}
+                        {flagged && (
+                          <span
+                            className="absolute -top-1 -right-1 text-[9px] leading-none"
+                            aria-hidden="true"
+                          >
+                            🚩
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2402,10 +3034,10 @@ export default function App() {
             <div className="antique-card rounded-2xl p-8 sm:p-10 text-center space-y-8">
               <div className="space-y-3">
                 <span className="inline-block text-xs uppercase tracking-[0.25em] text-[#d4af37] font-bold px-4 py-1 bg-[#261829] rounded-full border border-[#c5a059]/40">
-                  ✦ 試練の記録 ✦
+                  {isCbtMode ? '✦ 2級 CBT模擬試験 結果 ✦' : '✦ 試練の記録 ✦'}
                 </span>
                 <h2 className="classic-title text-3xl sm:text-4xl font-bold text-[#f3e5ab]">
-                  最終鑑定結果
+                  {isCbtMode ? '公式試験 合否判定結果' : '最終鑑定結果'}
                 </h2>
                 <p className="text-sm text-[#a69a8c]">
                   対象試験： {currentDataset.title}
@@ -2417,12 +3049,37 @@ export default function App() {
                 )}
               </div>
 
+              {isCbtMode && cbtScoreSummary && (
+                <div
+                  className={`rounded-xl border p-5 max-w-xl mx-auto space-y-2 ${
+                    cbtScoreSummary.isOfficialPassed
+                      ? 'border-emerald-500/75 bg-emerald-950/35 text-emerald-100'
+                      : 'border-rose-500/75 bg-rose-950/35 text-rose-100'
+                  }`}
+                >
+                  <div className="text-2xl sm:text-3xl font-bold tracking-wider">
+                    {cbtScoreSummary.isOfficialPassed
+                      ? '🎓 合格（公式基準達成）'
+                      : '不合格（基準未達）'}
+                  </div>
+                  <p className="text-xs sm:text-sm leading-relaxed">
+                    総合正答率：{cbtScoreSummary.overallPctExact}%（基準{' '}
+                    {OFFICIAL_EXAM_PASS_OVERALL_PCT}%以上：
+                    {cbtScoreSummary.overallPassed ? '達成' : '未達成'}） ／
+                    各分野{OFFICIAL_EXAM_PASS_DOMAIN_PCT}%以上：
+                    {cbtScoreSummary.allDomainsPassed
+                      ? '全4分野達成'
+                      : '5割未満の分野あり'}
+                  </p>
+                </div>
+              )}
+
               <div className="bg-[#120e16] border border-[#c5a059]/50 rounded-xl p-6 max-w-lg mx-auto grid grid-cols-3 gap-4 shadow-inner">
                 <div className="text-center border-r border-[#c5a059]/25 pr-2">
                   <span className="block text-xs text-[#9e9285] font-semibold mb-1">
                     正解した回数
                   </span>
-                  <span className="text-2xl sm:text-3xl font-bold text-emerald-400">
+                  <span className="text-2xl sm:text-3xl font-bold text-emerald-400 tabular-nums">
                     {correctCount} 回
                   </span>
                 </div>
@@ -2430,7 +3087,7 @@ export default function App() {
                   <span className="block text-xs text-[#9e9285] font-semibold mb-1">
                     間違えた回数
                   </span>
-                  <span className="text-2xl sm:text-3xl font-bold text-rose-400">
+                  <span className="text-2xl sm:text-3xl font-bold text-rose-400 tabular-nums">
                     {incorrectCount} 回
                   </span>
                 </div>
@@ -2438,11 +3095,52 @@ export default function App() {
                   <span className="block text-xs text-[#9e9285] font-semibold mb-1">
                     正解率
                   </span>
-                  <span className="text-2xl sm:text-3xl font-bold text-[#f3e5ab]">
-                    {percentage}%
+                  <span className="text-2xl sm:text-3xl font-bold text-[#f3e5ab] tabular-nums">
+                    {isCbtMode && cbtScoreSummary
+                      ? `${cbtScoreSummary.overallPctExact}%`
+                      : `${percentage}%`}
                   </span>
                 </div>
               </div>
+
+              {isCbtMode && cbtScoreSummary && (
+                <div className="max-w-xl mx-auto text-left space-y-3 bg-[#120e16]/85 border border-[#c5a059]/35 rounded-xl p-5">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#d4af37] tracking-wider">
+                    4分野別 正答率（合格ライン：各分野 {OFFICIAL_EXAM_PASS_DOMAIN_PCT}%以上）
+                  </h3>
+                  <div className="space-y-3">
+                    {cbtScoreSummary.domainRows.map((row) => (
+                      <div key={row.domain} className="space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="font-bold text-[#f3e5ab]">
+                            {row.domain}
+                          </span>
+                          <span
+                            className={`font-bold tabular-nums ${
+                              row.passed ? 'text-emerald-300' : 'text-rose-300'
+                            }`}
+                          >
+                            {row.correct} / {row.total}問（{row.pct}%）·{' '}
+                            {row.passed ? '5割以上 達成' : '5割未満'}
+                          </span>
+                        </div>
+                        <div className="relative h-2.5 rounded-full bg-[#1e1824] overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              row.passed ? 'bg-emerald-500' : 'bg-rose-500'
+                            }`}
+                            style={{ width: `${Math.min(100, row.pct)}%` }}
+                          />
+                          <div
+                            className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-[#ffd700]/80"
+                            title="合格基準 50%"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 pt-4">
                 <button
@@ -2462,7 +3160,7 @@ export default function App() {
                       : '🗝️ ホームに戻る'}
                   </span>
                 </button>
-                {activeRandomConfig && (
+                {(activeRandomConfig || isCbtMode) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -2470,6 +3168,7 @@ export default function App() {
                       setQuizTimeLimitSec(null);
                       setQuizRemainingSec(null);
                       setQuizTimedOut(false);
+                      setIsCbtMode(false);
                       setViewMode('random_setup');
                       changeRandomLibraryBackground();
                       scrollToTop();
@@ -2496,10 +3195,130 @@ export default function App() {
                   onClick={retryQuiz}
                   className="w-full sm:w-auto antique-btn px-8 py-3.5 rounded-xl font-bold shadow-lg transition flex items-center justify-center space-x-2 cursor-pointer"
                 >
-                  <span>🕯️ もう一度挑戦する</span>
+                  <span>
+                    {isCbtMode
+                      ? '🎓 もう一度本番モードに挑戦'
+                      : '🕯️ もう一度挑戦する'}
+                  </span>
                 </button>
               </div>
             </div>
+
+            {/* CBT Full Question-by-Question Review */}
+            {isCbtMode && (
+              <div className="antique-card rounded-2xl p-6 sm:p-8 space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="classic-title text-xl font-bold text-[#f3e5ab]">
+                      解答・解説の振り返り
+                    </h3>
+                    <p className="text-xs text-[#a69a8c] mt-0.5">
+                      CBT試験中の各問題の正誤と解説を確認できます。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        setCbtReviewFilter('all');
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer ${
+                        cbtReviewFilter === 'all'
+                          ? 'border-[#ffd700] bg-[#2a1d2e] text-[#ffd700]'
+                          : 'border-[#c5a059]/35 bg-[#141019] text-[#c9beae]'
+                      }`}
+                    >
+                      すべて（{totalCount}）
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        setCbtReviewFilter('wrong');
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer ${
+                        cbtReviewFilter === 'wrong'
+                          ? 'border-rose-400 bg-[#2d141d] text-rose-200'
+                          : 'border-[#c5a059]/35 bg-[#141019] text-[#c9beae]'
+                      }`}
+                    >
+                      不正解・未解答のみ（{incorrectCount}）
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {activeQuestions.map((q, idx) => {
+                    const userAns = userAnswers[idx] ?? null;
+                    const ok = isQuestionCorrect(userAns, q);
+                    if (cbtReviewFilter === 'wrong' && ok) return null;
+
+                    const correctText =
+                      q.type === 'multi_fill'
+                        ? q.blanks
+                            .map((b) => `${b.label}：${b.correctAnswer}`)
+                            .join(' ／ ')
+                        : q.correctAnswer;
+                    const userText = formatUserAnswerDisplay(userAns, q);
+                    const dom = cbtQuestionDomains[idx];
+
+                    return (
+                      <div
+                        key={`cbt-review-${idx}`}
+                        className="rounded-xl border border-[#c5a059]/30 bg-[#120e16]/90 p-4 sm:p-5 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="font-bold text-[#d4af37]">
+                            第 {idx + 1} 問{dom ? ` · ${dom}` : ''}
+                          </span>
+                          <span
+                            className={`font-bold ${
+                              ok ? 'text-emerald-300' : 'text-rose-300'
+                            }`}
+                          >
+                            {ok ? '〇 正解' : '✕ 不正解'}
+                          </span>
+                        </div>
+
+                        {q.diagram && (
+                          <div className="p-3 bg-[#f8f6f0] rounded-lg border border-[#c5a059]/50 overflow-x-auto">
+                            <DiagramViewer diagramId={q.diagram} />
+                          </div>
+                        )}
+
+                        <p className="text-sm text-[#f5efe6] leading-relaxed whitespace-pre-line">
+                          {q.question}
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="text-[#dfd7c8]">
+                            あなたの解答：{' '}
+                            <strong
+                              className={
+                                ok ? 'text-emerald-300' : 'text-rose-300'
+                              }
+                            >
+                              {userText}
+                            </strong>
+                          </div>
+                          <div className="text-[#dfd7c8]">
+                            正解：{' '}
+                            <strong className="text-[#f3e5ab]">
+                              {correctText}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-[#c9beae] leading-relaxed pt-2 border-t border-[#c5a059]/20 whitespace-pre-line">
+                          {q.explanation}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2782,6 +3601,7 @@ export default function App() {
             analyticsSummary={analyticsSummary}
             initialConfig={randomQuizConfig}
             onStart={handleStartRandomQuiz}
+            onStartOfficialExam={handleStartOfficialExam}
             onBackHome={() => goToHome(null)}
           />
         )}

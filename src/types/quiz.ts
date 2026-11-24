@@ -42,6 +42,7 @@ export interface MultiFillQuestion {
   type: 'multi_fill';
   diagram?: DiagramId;
   question: string;
+  wordBank?: string[];
   blanks: FillBlankItem[];
   explanation: string;
   point?: string;

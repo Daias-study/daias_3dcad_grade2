@@ -8,6 +8,7 @@ import { exam6Dataset } from './exam6Data';
 import { exam7Dataset } from './exam7Data';
 import { exam8Dataset } from './exam8Data';
 import { exam9Dataset } from './exam9Data';
+import { longPassageExamDataset } from './longPassageExamData';
 import type { QuizDataset } from '../types/quiz';
 
 export const quizDatasets: QuizDataset[] = [
@@ -21,4 +22,5 @@ export const quizDatasets: QuizDataset[] = [
   exam8Dataset,
   exam9Dataset,
   diagramExamDataset,
+  longPassageExamDataset,
 ];
