@@ -3602,7 +3602,6 @@ export default function App() {
             initialConfig={randomQuizConfig}
             onStart={handleStartRandomQuiz}
             onStartOfficialExam={handleStartOfficialExam}
-            onBackHome={() => goToHome(null)}
           />
         )}
       </main>

@@ -26,7 +26,6 @@ interface RandomQuizSetupViewProps {
   initialConfig: RandomQuizConfig;
   onStart: (config: RandomQuizConfig) => void;
   onStartOfficialExam: () => void;
-  onBackHome: () => void;
 }
 
 const PRESET_COUNTS = [5, 10, 20, 30, 50, 60] as const;
@@ -38,7 +37,6 @@ export function RandomQuizSetupView({
   initialConfig,
   onStart,
   onStartOfficialExam,
-  onBackHome,
 }: RandomQuizSetupViewProps) {
   const [orderMode, setOrderMode] = useState<RandomOrderMode>(
     initialConfig.orderMode
@@ -600,21 +598,13 @@ export function RandomQuizSetupView({
           </div>
         </section>
 
-        {/* Action Buttons */}
-        <div className="pt-5 border-t border-[#c5a059]/30 flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onBackHome}
-            className="w-full sm:w-auto px-5 py-3 rounded-xl border border-[#c5a059]/45 bg-[#1a151f] hover:bg-[#2a2133] text-[#dfd7c8] text-xs sm:text-sm font-bold transition cursor-pointer"
-          >
-            ◀ ホームへ戻る
-          </button>
-
+        {/* Action Button */}
+        <div className="pt-5 border-t border-[#c5a059]/30 flex justify-center">
           <button
             type="button"
             disabled={!canStart}
             onClick={handleSubmit}
-            className={`w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm sm:text-base font-bold transition shadow-lg ${
+            className={`w-full sm:w-auto px-10 py-3.5 rounded-xl text-sm sm:text-base font-bold transition shadow-lg ${
               canStart
                 ? 'antique-btn cursor-pointer'
                 : 'border border-[#c5a059]/25 bg-[#1a151f] text-[#6e6359] cursor-not-allowed'
