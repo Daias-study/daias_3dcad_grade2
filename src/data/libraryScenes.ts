@@ -51,4 +51,20 @@ export const darkAcademiaLibraryScenes: LibraryScene[] = [
     name: '燭光と大時計のゴシック回廊',
     url: `${BASE}assets/aistudio/Wandering_dark_gothic_mansion_co__f76bb0f5_42e4fcc9.mp4`,
   },
+  {
+    name: '蔦と洋灯の石畳回廊',
+    url: `${BASE}assets/aistudio/Camera_moving_through_dark_mansion_923f54ae_2f563e50.mp4`,
+  },
+  {
+    name: '緑灯と螺旋階段の大書庫',
+    url: `${BASE}assets/aistudio/Camera_moving_through_empty_library_c019e107_1f264fab.mp4`,
+  },
+  {
+    name: '甲冑と月光のゴシック広間',
+    url: `${BASE}assets/aistudio/Wandering_dark_gothic_mansion_ha__453a7a1e_e85a460c.mp4`,
+  },
+  {
+    name: '蔦と洋灯の大階段広間',
+    url: `${BASE}assets/aistudio/Camera_moving_through_dark_mansion_0f412891_ec2dbac6.mp4`,
+  },
 ];
