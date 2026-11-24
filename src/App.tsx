@@ -26,11 +26,15 @@ import {
   stopActivePowerOnNoise,
 } from './utils/radioSfx';
 import {
+  buildBackupFileName,
+  exportTransferToBackupFileContent,
   exportTransferToBase64Url,
   getQuestionKey,
   importTransferFromBase64Url,
+  importTransferFromFile,
   mergeReviewQuestions,
   mergeStudyHistory,
+  type ImportedTransferData,
 } from './utils/transferUtils';
 
 type ViewMode = 'home' | 'quiz' | 'result' | 'transfer' | 'analytics';
@@ -188,6 +192,8 @@ export default function App() {
   const editingJumpRef = useRef<boolean>(false);
   const editingTotalRef = useRef<boolean>(false);
   const fillInputRef = useRef<HTMLInputElement | null>(null);
+  const transferFileOverwriteRef = useRef<HTMLInputElement | null>(null);
+  const transferFileMergeRef = useRef<HTMLInputElement | null>(null);
   const multiInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const keyBufferRef = useRef<string>('');
@@ -1060,6 +1066,99 @@ export default function App() {
     showMessage(
       `✦ ${filename} を保存しました（ダブルクリックでそのまま開けます）`
     );
+  };
+
+  const applyImportedTransfer = (
+    imported: ImportedTransferData,
+    mode: 'overwrite' | 'merge',
+    source: 'code' | 'file',
+    fileName?: string
+  ) => {
+    const prefix = source === 'file' && fileName ? `「${fileName}」から` : '';
+    if (mode === 'overwrite') {
+      setReviewQuestions(imported.reviewQuestions);
+      saveStoredReviewQuestions(imported.reviewQuestions);
+      if (imported.hasStudyHistory) {
+        setStudyHistory(imported.studyHistory);
+        saveStudyHistory(imported.studyHistory);
+      }
+      setTransferImportDraft('');
+      showMessage(
+        imported.hasStudyHistory
+          ? `✦ ${prefix}復習問題集（${imported.reviewQuestions.length} 問）と学習データ分析（${imported.studyHistory.length} 件）を引き継ぎました（上書き）。`
+          : `✦ ${prefix}復習問題集（${imported.reviewQuestions.length} 問）を引き継ぎました（上書き）。`
+      );
+      return;
+    }
+
+    const mergedReview = mergeReviewQuestions(
+      reviewQuestions,
+      imported.reviewQuestions
+    );
+    const addedReviewCount = mergedReview.length - reviewQuestions.length;
+    setReviewQuestions(mergedReview);
+    saveStoredReviewQuestions(mergedReview);
+
+    let addedHistoryCount = 0;
+    let totalHistoryCount = studyHistory.length;
+    if (imported.hasStudyHistory) {
+      const mergedHistory = mergeStudyHistory(
+        studyHistory,
+        imported.studyHistory
+      );
+      addedHistoryCount = Math.max(
+        0,
+        mergedHistory.length - studyHistory.length
+      );
+      totalHistoryCount = mergedHistory.length;
+      setStudyHistory(mergedHistory);
+      saveStudyHistory(mergedHistory);
+    }
+
+    setTransferImportDraft('');
+    showMessage(
+      imported.hasStudyHistory
+        ? `✦ ${prefix}統合しました（復習問題集 +${addedReviewCount}問 計${mergedReview.length}問 ／ 学習データ分析 +${addedHistoryCount}件 計${totalHistoryCount}件）。`
+        : `✦ ${prefix}復習問題集を統合しました（新規追加 ${addedReviewCount} 問・合計 ${mergedReview.length} 問）。`
+    );
+  };
+
+  const handleDownloadTransferFile = () => {
+    playRadioButtonSfx('ui_click');
+    const jsonContent = exportTransferToBackupFileContent(
+      reviewQuestions,
+      studyHistory,
+      quizDatasets
+    );
+    const fileName = buildBackupFileName();
+    const blob = new Blob([jsonContent], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage(
+      `✦ ${fileName} を保存しました（復習問題集 ${reviewQuestions.length}問 ／ 学習データ分析 ${studyHistory.length}件）。`
+    );
+  };
+
+  const handleTransferFileSelected = async (
+    file: File | undefined,
+    mode: 'overwrite' | 'merge'
+  ) => {
+    if (!file) return;
+    playRadioButtonSfx('ui_click');
+    try {
+      const imported = await importTransferFromFile(file, quizDatasets);
+      applyImportedTransfer(imported, mode, 'file', file.name);
+    } catch {
+      showMessage('バックアップファイルの形式が正しくありません。');
+    }
   };
 
   const currentScene = darkAcademiaLibraryScenes[sceneIndex];
@@ -2223,11 +2322,11 @@ export default function App() {
                   ✦ 記録の継承 ✦
                 </span>
                 <h2 className="classic-title text-2xl sm:text-3xl font-bold text-[#f3e5ab]">
-                  データ引継ぎ（Base64URL）
+                  データ引継ぎ（Base64URL・ファイル）
                 </h2>
                 <p className="text-xs sm:text-sm text-[#a69a8c]">
                   現在の復習問題集（全 {reviewQuestions.length} 問）と学習データ分析（
-                  {studyHistory.length} 件）をコードやURLとして別の端末・ブラウザへ引き継げます。
+                  {studyHistory.length} 件）をgzip圧縮コード・URL・バックアップファイルとして引き継げます。
                 </p>
               </div>
 
@@ -2235,11 +2334,12 @@ export default function App() {
               <div className="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm sm:text-base font-bold text-[#d4af37]">
-                    📤 データを書き出す（引継ぎコード）
+                    📤 データを書き出す（引継ぎコード / ファイル）
                   </h3>
                   <span className="text-xs text-[#a69a8c]">
                     復習問題集 {reviewQuestions.length} 問 ／ 学習データ分析{' '}
-                    {studyHistory.length} 件
+                    {studyHistory.length} 件（{transferCode.startsWith('gz.') ? 'gzip圧縮・' : ''}
+                    {transferCode.length.toLocaleString()}文字）
                   </span>
                 </div>
                 <textarea
@@ -2249,7 +2349,7 @@ export default function App() {
                   onFocus={(e) => e.currentTarget.select()}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f3e5ab] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
                 />
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={async () => {
@@ -2292,19 +2392,26 @@ export default function App() {
                   >
                     🔗 引継ぎURLをコピー
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTransferFile}
+                    className="px-5 py-2.5 rounded-xl border border-emerald-500/55 bg-[#12221b] hover:bg-[#193026] text-emerald-200 text-xs sm:text-sm font-bold transition shadow cursor-pointer"
+                  >
+                    💾 ファイルで保存
+                  </button>
                 </div>
               </div>
 
               {/* 読み込み（インポート） */}
-              <div className="space-y-3 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
+              <div className="space-y-4 bg-[#120e16]/80 border border-[#c5a059]/35 rounded-xl p-5">
                 <h3 className="text-sm sm:text-base font-bold text-[#d4af37]">
-                  📥 データを読み込む（コード / 引継ぎURL）
+                  📥 データを読み込む（コード / 引継ぎURL / ファイル）
                 </h3>
                 <textarea
                   rows={3}
                   value={transferImportDraft}
                   onChange={(e) => setTransferImportDraft(e.target.value)}
-                  placeholder="Base64URLコード、または引継ぎURL（?save=...）をここに貼り付けてください..."
+                  placeholder="Base64URLコード（gz.圧縮・旧形式どちらも可）、引継ぎURL（?save=...）、または保存JSONを貼り付けてください..."
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0910] border border-[#c5a059]/50 text-[#f5efe6] placeholder-[#7d7267] text-xs font-mono leading-relaxed focus:outline-none focus:border-[#ffd700] resize-none"
                 />
                 <div className="flex flex-col sm:flex-row flex-wrap gap-3">
@@ -2317,18 +2424,7 @@ export default function App() {
                           transferImportDraft,
                           quizDatasets
                         );
-                        setReviewQuestions(imported.reviewQuestions);
-                        saveStoredReviewQuestions(imported.reviewQuestions);
-                        if (imported.hasStudyHistory) {
-                          setStudyHistory(imported.studyHistory);
-                          saveStudyHistory(imported.studyHistory);
-                        }
-                        setTransferImportDraft('');
-                        showMessage(
-                          imported.hasStudyHistory
-                            ? `✦ 復習問題集（${imported.reviewQuestions.length} 問）と学習データ分析（${imported.studyHistory.length} 件）を引き継ぎました（上書き）。`
-                            : `✦ 復習問題集（${imported.reviewQuestions.length} 問）を引き継ぎました（上書き）。`
-                        );
+                        applyImportedTransfer(imported, 'overwrite', 'code');
                       } catch {
                         showMessage(
                           '引継ぎコードの形式が正しくありません。'
@@ -2348,37 +2444,7 @@ export default function App() {
                           transferImportDraft,
                           quizDatasets
                         );
-                        const mergedReview = mergeReviewQuestions(
-                          reviewQuestions,
-                          imported.reviewQuestions
-                        );
-                        const addedReviewCount =
-                          mergedReview.length - reviewQuestions.length;
-                        setReviewQuestions(mergedReview);
-                        saveStoredReviewQuestions(mergedReview);
-
-                        let addedHistoryCount = 0;
-                        let totalHistoryCount = studyHistory.length;
-                        if (imported.hasStudyHistory) {
-                          const mergedHistory = mergeStudyHistory(
-                            studyHistory,
-                            imported.studyHistory
-                          );
-                          addedHistoryCount = Math.max(
-                            0,
-                            mergedHistory.length - studyHistory.length
-                          );
-                          totalHistoryCount = mergedHistory.length;
-                          setStudyHistory(mergedHistory);
-                          saveStudyHistory(mergedHistory);
-                        }
-
-                        setTransferImportDraft('');
-                        showMessage(
-                          imported.hasStudyHistory
-                            ? `✦ 統合しました（復習問題集 +${addedReviewCount}問 計${mergedReview.length}問 ／ 学習データ分析 +${addedHistoryCount}件 計${totalHistoryCount}件）。`
-                            : `✦ 復習問題集を統合しました（新規追加 ${addedReviewCount} 問・合計 ${mergedReview.length} 問）。`
-                        );
+                        applyImportedTransfer(imported, 'merge', 'code');
                       } catch {
                         showMessage(
                           '引継ぎコードの形式が正しくありません。'
@@ -2389,6 +2455,57 @@ export default function App() {
                   >
                     ➕ 現在の記録と統合する
                   </button>
+                </div>
+
+                {/* ファイル読み込み */}
+                <div className="pt-3 border-t border-[#c5a059]/20 space-y-2.5">
+                  <p className="text-xs text-[#a69a8c]">
+                    文字数制限を気にせず引き継ぐ場合は、保存したバックアップファイル（.json / .txt）からそのまま読み込めます。
+                  </p>
+                  <input
+                    ref={transferFileOverwriteRef}
+                    type="file"
+                    accept=".json,.txt,.gz,application/json,text/plain"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      void handleTransferFileSelected(file, 'overwrite');
+                    }}
+                  />
+                  <input
+                    ref={transferFileMergeRef}
+                    type="file"
+                    accept=".json,.txt,.gz,application/json,text/plain"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      void handleTransferFileSelected(file, 'merge');
+                    }}
+                  />
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        transferFileOverwriteRef.current?.click();
+                      }}
+                      className="px-5 py-2.5 rounded-xl border border-emerald-500/55 bg-[#12221b] hover:bg-[#193026] text-emerald-200 text-xs sm:text-sm font-bold transition shadow cursor-pointer"
+                    >
+                      📂 ファイルから上書き読み込み
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playRadioButtonSfx('ui_click');
+                        transferFileMergeRef.current?.click();
+                      }}
+                      className="px-5 py-2.5 rounded-xl border border-[#c5a059]/60 bg-[#1c1622] hover:bg-[#2c2236] text-[#f3e5ab] text-xs sm:text-sm font-bold transition shadow cursor-pointer"
+                    >
+                      📂 ファイルから統合読み込み
+                    </button>
+                  </div>
                 </div>
               </div>
 

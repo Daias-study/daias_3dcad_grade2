@@ -181,8 +181,8 @@ export function loadStudyHistory(): StudyAttemptRecord[] {
 
 export function saveStudyHistory(records: StudyAttemptRecord[]): void {
   try {
-    // Keep up to the latest 3000 attempts to avoid hitting localStorage quotas
-    const trimmed = records.length > 3000 ? records.slice(-3000) : records;
+    // Keep up to the latest 10000 attempts to balance long-term retention and localStorage quotas
+    const trimmed = records.length > 10000 ? records.slice(-10000) : records;
     window.localStorage.setItem(
       STUDY_HISTORY_STORAGE_KEY,
       JSON.stringify(trimmed)

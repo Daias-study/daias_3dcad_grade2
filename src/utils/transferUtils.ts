@@ -1,3 +1,4 @@
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
 import type { QuizDataset, QuizQuestion } from '../types/quiz';
 import {
   ALL_STUDY_GENRES,
@@ -5,6 +6,9 @@ import {
   type StudyAttemptRecord,
   type StudyGenre,
 } from './analyticsUtils';
+
+const MAX_TRANSFER_HISTORY_RECORDS = 10000;
+const GZIP_PREFIX = 'gz.';
 
 type CompactMatchedAttempt = [
   dsIdx: number,
@@ -36,6 +40,13 @@ export interface TransferPayload {
   h?: CompactStudyAttemptEntry[];
 }
 
+export interface BackupFileEnvelope {
+  app: 'daia-3dcad';
+  format: 'daia-3dcad-backup';
+  exportedAt: string;
+  payload: TransferPayload;
+}
+
 export interface ImportedTransferData {
   reviewQuestions: QuizQuestion[];
   studyHistory: StudyAttemptRecord[];
@@ -46,11 +57,12 @@ export function getQuestionKey(q: QuizQuestion): string {
   return `${q.diagram ?? ''}::${q.type ?? 'choice'}::${q.question}`;
 }
 
-export function encodeBase64Url(text: string): string {
-  const bytes = new TextEncoder().encode(text);
+function bytesToBase64Url(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
   }
   return btoa(binary)
     .replace(/\+/g, '-')
@@ -58,7 +70,7 @@ export function encodeBase64Url(text: string): string {
     .replace(/=+$/, '');
 }
 
-export function decodeBase64Url(code: string): string {
+function base64UrlToBytes(code: string): Uint8Array {
   const normalized = code.trim().replace(/-/g, '+').replace(/_/g, '/');
   if (!normalized || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
     throw new Error('Invalid Base64URL format');
@@ -70,7 +82,35 @@ export function decodeBase64Url(code: string): string {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return new TextDecoder().decode(bytes);
+  return bytes;
+}
+
+export function encodeBase64Url(text: string): string {
+  return bytesToBase64Url(strToU8(text));
+}
+
+export function encodeCompressedBase64Url(text: string): string {
+  const rawBytes = strToU8(text);
+  const rawEncoded = bytesToBase64Url(rawBytes);
+  try {
+    const compressed = gzipSync(rawBytes, { level: 9 });
+    const gzEncoded = `${GZIP_PREFIX}${bytesToBase64Url(compressed)}`;
+    return gzEncoded.length < rawEncoded.length ? gzEncoded : rawEncoded;
+  } catch {
+    return rawEncoded;
+  }
+}
+
+export function decodeBase64Url(code: string): string {
+  const trimmed = code.trim();
+  if (trimmed.startsWith(GZIP_PREFIX)) {
+    const compressedBytes = base64UrlToBytes(
+      trimmed.slice(GZIP_PREFIX.length)
+    );
+    const decompressed = gunzipSync(compressedBytes);
+    return strFromU8(decompressed);
+  }
+  return strFromU8(base64UrlToBytes(trimmed));
 }
 
 function buildDatasetQuestionLookup(
@@ -88,11 +128,12 @@ function buildDatasetQuestionLookup(
   return indexLookup;
 }
 
-export function exportTransferToBase64Url(
+function buildTransferPayload(
   reviewQuestions: QuizQuestion[],
   studyHistory: StudyAttemptRecord[],
-  datasets: QuizDataset[]
-): string {
+  datasets: QuizDataset[],
+  maxHistoryRecords: number
+): TransferPayload {
   const indexLookup = buildDatasetQuestionLookup(datasets);
 
   const refs: [number, number][] = [];
@@ -109,7 +150,10 @@ export function exportTransferToBase64Url(
   }
 
   const trimmedHistory =
-    studyHistory.length > 3000 ? studyHistory.slice(-3000) : studyHistory;
+    Number.isFinite(maxHistoryRecords) && studyHistory.length > maxHistoryRecords
+      ? studyHistory.slice(-maxHistoryRecords)
+      : studyHistory;
+
   const compactHistory: CompactStudyAttemptEntry[] = trimmedHistory.map(
     (att) => {
       const ref = indexLookup.get(att.questionKey);
@@ -132,14 +176,26 @@ export function exportTransferToBase64Url(
     }
   );
 
-  const payload: TransferPayload = {
+  return {
     v: 2,
     r: refs,
     ...(extras.length > 0 ? { x: extras } : {}),
     h: compactHistory,
   };
+}
 
-  return encodeBase64Url(JSON.stringify(payload));
+export function exportTransferToBase64Url(
+  reviewQuestions: QuizQuestion[],
+  studyHistory: StudyAttemptRecord[],
+  datasets: QuizDataset[]
+): string {
+  const payload = buildTransferPayload(
+    reviewQuestions,
+    studyHistory,
+    datasets,
+    MAX_TRANSFER_HISTORY_RECORDS
+  );
+  return encodeCompressedBase64Url(JSON.stringify(payload));
 }
 
 export function exportReviewToBase64Url(
@@ -147,6 +203,35 @@ export function exportReviewToBase64Url(
   datasets: QuizDataset[]
 ): string {
   return exportTransferToBase64Url(reviewQuestions, [], datasets);
+}
+
+export function exportTransferToBackupFileContent(
+  reviewQuestions: QuizQuestion[],
+  studyHistory: StudyAttemptRecord[],
+  datasets: QuizDataset[]
+): string {
+  const payload = buildTransferPayload(
+    reviewQuestions,
+    studyHistory,
+    datasets,
+    Infinity
+  );
+  const envelope: BackupFileEnvelope = {
+    app: 'daia-3dcad',
+    format: 'daia-3dcad-backup',
+    exportedAt: new Date().toISOString(),
+    payload,
+  };
+  return JSON.stringify(envelope);
+}
+
+export function buildBackupFileName(date: Date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  return `daia-3dcad-backup-${yyyy}${mm}${dd}-${hh}${mi}.json`;
 }
 
 export function extractBase64UrlToken(input: string): string {
@@ -165,21 +250,23 @@ export function extractBase64UrlToken(input: string): string {
   return trimmed.replace(/\s+/g, '');
 }
 
-export function importTransferFromBase64Url(
-  rawInput: string,
+function parseTransferPayloadObject(
+  rawObj: unknown,
   datasets: QuizDataset[]
 ): ImportedTransferData {
-  const token = extractBase64UrlToken(rawInput);
-  if (!token) {
-    throw new Error('Empty input');
-  }
-  const jsonText = decodeBase64Url(token);
-  const parsed = JSON.parse(jsonText) as Partial<TransferPayload>;
+  const candidate =
+    rawObj &&
+    typeof rawObj === 'object' &&
+    'payload' in rawObj &&
+    (rawObj as { payload?: unknown }).payload &&
+    typeof (rawObj as { payload?: unknown }).payload === 'object'
+      ? (rawObj as { payload: Partial<TransferPayload> }).payload
+      : (rawObj as Partial<TransferPayload>);
 
   if (
-    !parsed ||
-    (parsed.v !== 1 && parsed.v !== 2) ||
-    !Array.isArray(parsed.r)
+    !candidate ||
+    (candidate.v !== 1 && candidate.v !== 2) ||
+    !Array.isArray(candidate.r)
   ) {
     throw new Error('Invalid payload structure');
   }
@@ -187,7 +274,7 @@ export function importTransferFromBase64Url(
   const reviewQuestions: QuizQuestion[] = [];
   const seenReview = new Set<string>();
 
-  for (const entry of parsed.r) {
+  for (const entry of candidate.r) {
     if (!Array.isArray(entry) || entry.length !== 2) continue;
     const [dsIdx, qIdx] = entry;
     const q = datasets[dsIdx]?.questions[qIdx];
@@ -199,8 +286,8 @@ export function importTransferFromBase64Url(
     }
   }
 
-  if (Array.isArray(parsed.x)) {
-    for (const q of parsed.x) {
+  if (Array.isArray(candidate.x)) {
+    for (const q of candidate.x) {
       if (!q || typeof q.question !== 'string') continue;
       const key = getQuestionKey(q);
       if (!seenReview.has(key)) {
@@ -210,11 +297,11 @@ export function importTransferFromBase64Url(
     }
   }
 
-  const hasStudyHistory = Array.isArray(parsed.h);
+  const hasStudyHistory = Array.isArray(candidate.h);
   const studyHistory: StudyAttemptRecord[] = [];
 
-  if (Array.isArray(parsed.h)) {
-    for (const entry of parsed.h) {
+  if (Array.isArray(candidate.h)) {
+    for (const entry of candidate.h) {
       if (!Array.isArray(entry)) continue;
 
       if (entry.length === 5 && typeof entry[0] === 'number') {
@@ -265,6 +352,45 @@ export function importTransferFromBase64Url(
   };
 }
 
+export function importTransferFromBase64Url(
+  rawInput: string,
+  datasets: QuizDataset[]
+): ImportedTransferData {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    throw new Error('Empty input');
+  }
+
+  // Also accept raw JSON backup text directly
+  if (trimmed.startsWith('{')) {
+    const parsedJson = JSON.parse(trimmed) as unknown;
+    return parseTransferPayloadObject(parsedJson, datasets);
+  }
+
+  const token = extractBase64UrlToken(trimmed);
+  if (!token) {
+    throw new Error('Empty input');
+  }
+  const jsonText = decodeBase64Url(token);
+  const parsed = JSON.parse(jsonText) as unknown;
+  return parseTransferPayloadObject(parsed, datasets);
+}
+
+export async function importTransferFromFile(
+  file: File,
+  datasets: QuizDataset[]
+): Promise<ImportedTransferData> {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let text: string;
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    text = strFromU8(gunzipSync(bytes));
+  } else {
+    text = strFromU8(bytes);
+  }
+  return importTransferFromBase64Url(text, datasets);
+}
+
 export function importReviewFromBase64Url(
   rawInput: string,
   datasets: QuizDataset[]
@@ -306,5 +432,7 @@ export function mergeStudyHistory(
     }
   }
   merged.sort((a, b) => a.timestamp - b.timestamp);
-  return merged.length > 3000 ? merged.slice(-3000) : merged;
+  return merged.length > MAX_TRANSFER_HISTORY_RECORDS
+    ? merged.slice(-MAX_TRANSFER_HISTORY_RECORDS)
+    : merged;
 }
