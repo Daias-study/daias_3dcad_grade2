@@ -11,6 +11,7 @@ interface StudyCalendarPanelProps {
 }
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'] as const;
+const MIN_CALENDAR_YEAR = 2026;
 
 function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
@@ -54,12 +55,14 @@ export function StudyCalendarPanel({
   const todayKey = useMemo(() => toDateKey(today), [today]);
 
   const [selectedYear, setSelectedYear] = useState<number>(() =>
-    today.getFullYear()
+    Math.max(MIN_CALENDAR_YEAR, today.getFullYear())
   );
-  const [selectedMonth, setSelectedMonth] = useState<number>(
-    () => today.getMonth() + 1
+  const [selectedMonth, setSelectedMonth] = useState<number>(() =>
+    today.getFullYear() < MIN_CALENDAR_YEAR ? 1 : today.getMonth() + 1
   );
-  const [selectedDay, setSelectedDay] = useState<number>(() => today.getDate());
+  const [selectedDay, setSelectedDay] = useState<number>(() =>
+    today.getFullYear() < MIN_CALENDAR_YEAR ? 1 : today.getDate()
+  );
 
   const daysInSelectedMonth = useMemo(
     () => getDaysInMonth(selectedYear, selectedMonth),
@@ -73,17 +76,19 @@ export function StudyCalendarPanel({
       new Date(selectedYear, selectedMonth - 1, clampedDay).getDay()
     ];
 
-  // Dynamic year dropdown options including current +/- 2 years and any recorded dates
+  // Dynamic year dropdown options from 2026 onward (up to current + 2 years, plus selected/recorded years >= 2026)
   const yearOptions = useMemo(() => {
-    const baseYear = today.getFullYear();
+    const baseYear = Math.max(MIN_CALENDAR_YEAR, today.getFullYear());
     const set = new Set<number>();
-    for (let y = Math.min(2024, baseYear - 2); y <= baseYear + 2; y++) {
+    for (let y = MIN_CALENDAR_YEAR; y <= baseYear + 2; y++) {
       set.add(y);
     }
-    set.add(selectedYear);
+    if (selectedYear >= MIN_CALENDAR_YEAR) {
+      set.add(selectedYear);
+    }
     for (const k of Object.keys(dailyQuizStats)) {
       const y = Number.parseInt(k.slice(0, 4), 10);
-      if (!Number.isNaN(y)) set.add(y);
+      if (!Number.isNaN(y) && y >= MIN_CALENDAR_YEAR) set.add(y);
     }
     return Array.from(set).sort((a, b) => a - b);
   }, [today, selectedYear, dailyQuizStats]);
@@ -143,10 +148,14 @@ export function StudyCalendarPanel({
       ? Math.round((selectedStat.correct / selectedStat.attempts) * 1000) / 10
       : null;
 
+  const isAtMinMonth =
+    selectedYear <= MIN_CALENDAR_YEAR && selectedMonth <= 1;
+
   const handleYearChange = (nextYear: number) => {
     playRadioButtonSfx('ui_click');
-    const maxDay = getDaysInMonth(nextYear, selectedMonth);
-    setSelectedYear(nextYear);
+    const safeYear = Math.max(MIN_CALENDAR_YEAR, nextYear);
+    const maxDay = getDaysInMonth(safeYear, selectedMonth);
+    setSelectedYear(safeYear);
     if (selectedDay > maxDay) setSelectedDay(maxDay);
   };
 
@@ -163,9 +172,10 @@ export function StudyCalendarPanel({
   };
 
   const shiftMonth = (delta: number) => {
-    playRadioButtonSfx('ui_click');
     const d = new Date(selectedYear, selectedMonth - 1 + delta, 1);
     const nextY = d.getFullYear();
+    if (nextY < MIN_CALENDAR_YEAR) return;
+    playRadioButtonSfx('ui_click');
     const nextM = d.getMonth() + 1;
     const maxD = getDaysInMonth(nextY, nextM);
     setSelectedYear(nextY);
@@ -176,6 +186,12 @@ export function StudyCalendarPanel({
   const jumpToToday = () => {
     playRadioButtonSfx('ui_click');
     const now = new Date();
+    if (now.getFullYear() < MIN_CALENDAR_YEAR) {
+      setSelectedYear(MIN_CALENDAR_YEAR);
+      setSelectedMonth(1);
+      setSelectedDay(1);
+      return;
+    }
     setSelectedYear(now.getFullYear());
     setSelectedMonth(now.getMonth() + 1);
     setSelectedDay(now.getDate());
@@ -275,8 +291,9 @@ export function StudyCalendarPanel({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              disabled={isAtMinMonth}
               onClick={() => shiftMonth(-1)}
-              className="px-3 py-2 rounded-lg border border-[#c5a059]/45 bg-[#1a151f] hover:bg-[#2a2133] text-[#f3e5ab] text-xs font-bold transition cursor-pointer"
+              className="px-3 py-2 rounded-lg border border-[#c5a059]/45 bg-[#1a151f] hover:bg-[#2a2133] disabled:opacity-40 disabled:hover:bg-[#1a151f] disabled:cursor-not-allowed text-[#f3e5ab] text-xs font-bold transition cursor-pointer"
             >
               ◀ 前月
             </button>
